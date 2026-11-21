@@ -1,0 +1,22 @@
+{
+  "name": "@hpos/cloud",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@hpos/contracts": "workspace:*",
+    "@hpos/db": "workspace:*",
+    "@hpos/domain": "workspace:*",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@hpos/config": "workspace:*"
+  }
+}
