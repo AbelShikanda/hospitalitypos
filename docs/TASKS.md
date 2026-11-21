@@ -16,8 +16,8 @@ that completes them, and commit one small milestone at a time (see `AGENT.md`).
 **Exit:** `pnpm dev` boots web + edge + cloud locally; CI green; a tenant can be
 created and logged into.
 
-- [ ] Init pnpm workspace + Turborepo; TS strict, ESLint, Prettier, Vitest.
-- [ ] Create packages: `domain`, `contracts`, `db`, `ui`, `config`.
+- [x] Init pnpm workspace + Turborepo; TS strict, ESLint, Prettier, Vitest.
+- [x] Create packages: `domain`, `contracts`, `db`, `ui`, `config`.
 - [ ] Create apps: `web` (Vite PWA shell), `edge` (Hono + Kysely + SQLite),
       `cloud` (Hono + Kysely + Postgres/MySQL).
 - [ ] `packages/db`: Kysely `Database` interface + `createDb()` dialect factory

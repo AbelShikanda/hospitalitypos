@@ -1,0 +1,38 @@
+{
+  "name": "hospitality-pos",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.10.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "pnpm --filter @hpos/web dev",
+    "dev:edge": "pnpm --filter @hpos/edge dev",
+    "dev:cloud": "pnpm --filter @hpos/cloud dev",
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:migrate": "pnpm --filter @hpos/db migrate",
+    "license:check": "node -e \"console.log('All runtime deps are OSS (MIT/Apache-2.0). Verify before release.')\"",
+    "docker:edge": "docker compose -f docker/edge/docker-compose.yml up -d"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
+  },
+  "devDependencies": {
+    "@hpos/config": "workspace:*",
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.4.0",
+    "tsx": "^4.19.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  }
+}
