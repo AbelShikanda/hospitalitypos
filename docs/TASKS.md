@@ -18,20 +18,20 @@ created and logged into.
 
 - [x] Init pnpm workspace + Turborepo; TS strict, ESLint, Prettier, Vitest.
 - [x] Create packages: `domain`, `contracts`, `db`, `ui`, `config`.
-- [ ] Create apps: `web` (Vite PWA shell), `edge` (Hono + Kysely + SQLite),
+- [x] Create apps: `web` (Vite PWA shell), `edge` (Hono + Kysely + SQLite),
       `cloud` (Hono + Kysely + Postgres/MySQL).
-- [ ] `packages/db`: Kysely `Database` interface + `createDb()` dialect factory
+- [x] `packages/db`: Kysely `Database` interface + `createDb()` dialect factory
       (`DB_DIALECT=postgres|mysql`) + code-based migrations.
-- [ ] Define core schema: tenant, venue, user, membership, role (portable types:
+- [x] Define core schema: tenant, venue, user, membership, role (portable types:
       ULID `char(26)`, `bigint` money, `text` JSON, UTC timestamps).
 - [ ] Auth: PIN (POS) + email/OTP (admin); tenant-scoped sessions.
 - [ ] Tenant-scoping middleware + tests proving isolation (app-layer, both dialects).
 - [ ] Docker Compose for edge; Dockerfile for cloud; GitHub Actions CI.
 - [ ] CI matrix: migrations + isolation/sync tests on Postgres **and** MySQL/MariaDB;
       edge tests on SQLite.
-- [ ] Seed script: one tenant, one venue, sample roles.
+- [x] Seed script: one tenant, one venue, sample roles.
 - [ ] Zero-cost audit: all deps OSS/self-hostable; no paid service required.
-- [ ] `docs/AGENT.md` commands verified against real scripts.
+- [x] `docs/AGENT.md` commands verified against real scripts.
 
 ---
 

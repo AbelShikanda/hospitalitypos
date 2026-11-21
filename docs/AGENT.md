@@ -48,15 +48,19 @@ hospitality-pos/
 ```bash
 pnpm install
 pnpm dev            # run web + edge + cloud locally
+pnpm dev:web        # web only
 pnpm dev:edge       # edge node only
 pnpm dev:cloud      # cloud only
 pnpm build
 pnpm lint
+pnpm format         # prettier --write
+pnpm format:check
 pnpm typecheck
 pnpm test           # Vitest
-pnpm test:e2e       # Playwright
-pnpm db:generate    # Kysely type generation (optional, kysely-codegen)
 pnpm db:migrate     # run Kysely migrations
+pnpm docker:edge    # start edge via Docker Compose
+
+# Planned, not yet implemented: pnpm test:e2e (Playwright)
 ```
 
 ## Working workflow
