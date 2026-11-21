@@ -1,0 +1,27 @@
+{
+  "name": "@hpos/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/cli.ts migrate",
+    "seed": "tsx src/cli.ts seed"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.0.0",
+    "kysely": "^0.28.0",
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0",
+    "ulid": "^3.0.0"
+  },
+  "devDependencies": {
+    "@hpos/config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/pg": "^8.11.0"
+  }
+}
