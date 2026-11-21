@@ -9,6 +9,9 @@
   "devDependencies": {
     "@hpos/config": "workspace:*"
   },
+  "dependencies": {
+    "ulid": "^3.0.0"
+  },
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
