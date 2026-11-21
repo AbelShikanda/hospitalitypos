@@ -27,4 +27,27 @@ export async function seed(db: Kysely<Database>): Promise<void> {
       created_at: now,
     })
     .execute();
+
+  const userId = ulid();
+  await db
+    .insertInto("users")
+    .values({
+      id: userId,
+      tenant_id: tenantId,
+      name: "Demo Manager",
+      pin_hash: "demo-pin-hash",
+      created_at: now,
+    })
+    .execute();
+
+  await db
+    .insertInto("memberships")
+    .values({
+      id: ulid(),
+      tenant_id: tenantId,
+      user_id: userId,
+      role: "Owner",
+      created_at: now,
+    })
+    .execute();
 }
