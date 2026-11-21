@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hospitality POS">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0D1511"/>
+      <stop offset="0.6" stop-color="#080D0B"/>
+      <stop offset="1" stop-color="#172E21"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#70B486"/>
+      <stop offset="1" stop-color="#3F8058"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)" stroke="#314638" stroke-width="6"/>
+  <path d="M168 372V272c0-48.6 39.4-88 88-88s88 39.4 88 88v100" fill="none" stroke="url(#mark)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M152 392h208" fill="none" stroke="#6EE7A8" stroke-width="10" stroke-linecap="round" opacity="0.9" filter="url(#glow)"/>
+  <circle cx="256" cy="214" r="10" fill="#6EE7A8" filter="url(#glow)"/>
+</svg>
