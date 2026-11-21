@@ -92,6 +92,12 @@ stop_preview() {
 case "${1:-}" in
   --stop)
     stop_preview
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -f "@hpos/edge start" 2>/dev/null || true
+    fi
+    if command -v fuser >/dev/null 2>&1; then
+      fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+    fi
     if [[ -f "$ROOT/docker/edge/docker-compose.yml" ]] && command -v docker >/dev/null 2>&1; then
       (cd "$ROOT" && docker compose -f docker/edge/docker-compose.yml stop >>"$LOG" 2>&1) || true
     fi
@@ -110,7 +116,16 @@ if healthy; then
   exit 0
 fi
 
-# 1) Prefer the real edge server via Docker Compose when it exists.
+# 1) Local dev edge (fastest when pnpm is available).
+if [[ -f "$ROOT/apps/edge/package.json" ]] && command -v pnpm >/dev/null 2>&1; then
+  log "Starting edge via pnpm"
+  (cd "$ROOT" && nohup pnpm --filter @hpos/edge start >>"$LOG" 2>&1 & echo $! >"$PID_FILE")
+  if wait_healthy 60; then open_app; exit 0; fi
+  notify "Edge server did not become healthy. See $LOG"
+  exit 1
+fi
+
+# 2) Docker Compose fallback for release bundles.
 if [[ -f "$ROOT/docker/edge/docker-compose.yml" ]] && command -v docker >/dev/null 2>&1; then
   log "Starting edge via docker compose"
   if ! (cd "$ROOT" && docker compose -f docker/edge/docker-compose.yml up -d >>"$LOG" 2>&1); then
@@ -118,15 +133,6 @@ if [[ -f "$ROOT/docker/edge/docker-compose.yml" ]] && command -v docker >/dev/nu
     exit 1
   fi
   if wait_healthy 90; then open_app; exit 0; fi
-  notify "Edge server did not become healthy. See $LOG"
-  exit 1
-fi
-
-# 2) Local dev edge.
-if [[ -f "$ROOT/apps/edge/package.json" ]] && command -v pnpm >/dev/null 2>&1; then
-  log "Starting edge via pnpm"
-  (cd "$ROOT" && nohup pnpm --filter @hpos/edge start >>"$LOG" 2>&1 & echo $! >"$PID_FILE")
-  if wait_healthy 60; then open_app; exit 0; fi
   notify "Edge server did not become healthy. See $LOG"
   exit 1
 fi

@@ -1,0 +1,19 @@
+services:
+  edge:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @hpos/edge start"
+    ports:
+      - "4000:4000"
+    volumes:
+      - ../..:/app
+      - edge-data:/app/apps/edge/data
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: file:./data/pos.db
+      POS_VERSION: dev
+    restart: "no"
+
+volumes:
+  edge-data:
