@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Hospitality POS
+GenericName=Hospitality Point of Sale
+Comment=Start the local Hospitality POS server and open the app
+Exec=@ROOT@/scripts/launch-edge.sh
+Path=@ROOT@
+Icon=@ROOT@/packaging/icons/hospitality-pos.svg
+Terminal=false
+Categories=Office;Finance;
+StartupNotify=false
+StartupWMClass=HospitalityPOS
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop Hospitality POS
+Exec=@ROOT@/scripts/launch-edge.sh --stop
