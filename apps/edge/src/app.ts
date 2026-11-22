@@ -22,6 +22,9 @@ import {
   setSessionCookie,
   type AppEnv,
 } from "./auth.js";
+import { registerFloorRoutes } from "./floor.js";
+import { registerMenuRoutes } from "./menu.js";
+import { registerOrderRoutes } from "./orders.js";
 
 export interface EdgeAppOptions {
   db: Db;
@@ -60,7 +63,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 2, build }),
+    context.json({ app: version, edge: version, schema: 3, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -224,6 +227,10 @@ export function createEdgeApp({
       return context.json(venue, 201);
     },
   );
+
+  registerMenuRoutes(app, db);
+  registerFloorRoutes(app, db);
+  registerOrderRoutes(app, db);
 
   if (webDist !== null) {
     const dist =

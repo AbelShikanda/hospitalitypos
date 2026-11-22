@@ -74,8 +74,7 @@ start; Settings → Danger Zone can restart/shut down the edge.
 - [ ] Edge one-command launcher (`start.sh`/`start.bat`/`start.ps1`): Docker
       check, `.env` bootstrap, seed, start, print LAN URL + QR.
 - [ ] Hosted-mode demo banner (seeded data, not for real money, no hardware).
-- [x] Desktop launchers: Linux `.desktop` (`Terminal=false`), Windows `wscript`
-      + hidden PowerShell, macOS `.app` bundle — no console windows.
+- [x] Desktop launchers: Linux `.desktop` (`Terminal=false`), Windows `wscript` + hidden PowerShell, macOS `.app` bundle — no console windows.
 - [x] Shortcut installers create Desktop + app-menu entries on all three OSes.
 - [x] Launcher starts edge or preview, waits for health, opens Chrome/Edge
       app-mode window, logs to file.
@@ -89,16 +88,17 @@ start; Settings → Danger Zone can restart/shut down the edge.
 **Exit:** A waiter can open a table, build an order with modifiers, and send it;
 data survives an edge-node restart.
 
-- [ ] Menu schema: categories, items, variants, modifier groups, availability.
-- [ ] Per-venue pricing + tax group per item.
-- [ ] Floor plan: areas and tables; table status (free/occupied/reserved).
-- [ ] Order state machine in `domain` (open → sent → preparing → served → closed)
+- [x] Menu schema: categories, items, modifier groups, availability.
+- [x] Per-venue pricing + tax rate per item (VAT-inclusive prices, ADR-020).
+- [x] Floor plan: areas and tables; table status (free/occupied/reserved).
+- [x] Order state machine in `domain` (open → sent → preparing → served → closed)
       with unit tests.
-- [ ] Order taking UI: fast touch grid, modifiers, notes, quantity, courses.
-- [ ] Open tabs, move/merge tables.
-- [ ] Local persistence on edge (SQLite) + optimistic UI in PWA.
+- [x] Order taking UI: fast touch grid, modifiers, quantity; send to kitchen.
+- [ ] Order notes, courses, open tabs, move/merge tables.
+- [x] Local persistence on edge (SQLite) + restart survival.
+- [ ] Optimistic UI in PWA.
 - [ ] Outbox write on every mutation; idempotency keys.
-- [ ] Audit log for order events.
+- [x] Audit log for order events.
 
 ---
 

@@ -16,11 +16,15 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:migrate": "pnpm --filter @hpos/db migrate",
+    "db:seed": "pnpm --filter @hpos/db seed",
     "license:check": "node -e \"console.log('All runtime deps are OSS (MIT/Apache-2.0). Verify before release.')\"",
     "docker:edge": "docker compose -f docker/edge/docker-compose.yml up -d"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ]
   },
   "devDependencies": {
     "@hpos/config": "workspace:*",

@@ -160,6 +160,136 @@ export const sessionSchema = z.object({
   expires_at: z.string(),
 });
 
+export const menuModifierSchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  price_delta_minor: z.number().int(),
+});
+
+export const menuModifierGroupSchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  min_select: z.number().int().nonnegative(),
+  max_select: z.number().int().positive(),
+  modifiers: z.array(menuModifierSchema),
+});
+
+export const menuItemSchema = z.object({
+  id: ulid,
+  category_id: ulid,
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  price_minor: z.number().int().nonnegative(),
+  tax_rate: z.number().int().nonnegative(),
+  is_available: z.boolean(),
+  modifier_groups: z.array(menuModifierGroupSchema),
+});
+
+export const menuCategorySchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  items: z.array(menuItemSchema),
+});
+
+export const menuSchema = z.object({
+  venue_id: ulid,
+  categories: z.array(menuCategorySchema),
+});
+
+export const floorTableSchema = z.object({
+  id: ulid,
+  area_id: ulid,
+  name: z.string().min(1),
+  seats: z.number().int().positive(),
+  status: z.enum(["free", "occupied", "reserved"]),
+});
+
+export const floorAreaSchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  tables: z.array(floorTableSchema),
+});
+
+export const floorSchema = z.object({
+  venue_id: ulid,
+  areas: z.array(floorAreaSchema),
+});
+
+export const createMenuItemSchema = z.object({
+  category_id: ulid,
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).optional(),
+  price_minor: z.number().int().positive(),
+  tax_rate: z.number().int().min(0).max(100).default(16),
+  is_available: z.boolean().default(true),
+});
+
+export const createTableSchema = z.object({
+  area_id: ulid,
+  name: z.string().min(1).max(40),
+  seats: z.number().int().min(1).max(50).default(2),
+});
+
+export const createOrderItemSchema = z.object({
+  item_id: ulid,
+  quantity: z.number().int().min(1).max(99).default(1),
+  notes: z.string().max(500).optional(),
+  modifier_ids: z.array(ulid).max(20).optional(),
+});
+
+export const createOrderSchema = z.object({
+  venue_id: ulid,
+  table_id: ulid.optional(),
+  notes: z.string().max(500).optional(),
+  items: z.array(createOrderItemSchema).min(1).max(100),
+});
+
+export const orderStatusSchema = z.enum([
+  "open",
+  "sent",
+  "preparing",
+  "ready",
+  "served",
+  "closed",
+  "voided",
+]);
+
+export const orderItemSchema = z.object({
+  id: ulid,
+  item_id: ulid,
+  name: z.string().min(1),
+  unit_price_minor: z.number().int().nonnegative(),
+  quantity: z.number().int().positive(),
+  tax_rate: z.number().int().nonnegative(),
+  line_total_minor: z.number().int().nonnegative(),
+  notes: z.string().nullable(),
+  status: z.string(),
+  modifiers: z.array(
+    z.object({
+      id: ulid,
+      modifier_id: ulid,
+      name: z.string().min(1),
+      price_delta_minor: z.number().int(),
+    }),
+  ),
+});
+
+export const orderSchema = z.object({
+  id: ulid,
+  tenant_id: ulid,
+  venue_id: ulid,
+  table_id: ulid.nullable(),
+  number: z.string().min(1),
+  status: orderStatusSchema,
+  subtotal_minor: z.number().int().nonnegative(),
+  tax_minor: z.number().int().nonnegative(),
+  total_minor: z.number().int().nonnegative(),
+  notes: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  items: z.array(orderItemSchema),
+});
+
 export type Health = z.infer<typeof healthSchema>;
 export type Version = z.infer<typeof versionSchema>;
 export type Tenant = z.infer<typeof tenantSchema>;
@@ -169,6 +299,21 @@ export type PinLogin = z.infer<typeof pinLoginSchema>;
 export type StaffMember = z.infer<typeof staffMemberSchema>;
 export type Bootstrap = z.infer<typeof bootstrapSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type MenuModifier = z.infer<typeof menuModifierSchema>;
+export type MenuModifierGroup = z.infer<typeof menuModifierGroupSchema>;
+export type MenuItem = z.infer<typeof menuItemSchema>;
+export type MenuCategory = z.infer<typeof menuCategorySchema>;
+export type Menu = z.infer<typeof menuSchema>;
+export type FloorTable = z.infer<typeof floorTableSchema>;
+export type FloorArea = z.infer<typeof floorAreaSchema>;
+export type Floor = z.infer<typeof floorSchema>;
+export type CreateMenuItem = z.infer<typeof createMenuItemSchema>;
+export type CreateTable = z.infer<typeof createTableSchema>;
+export type CreateOrderItem = z.infer<typeof createOrderItemSchema>;
+export type CreateOrder = z.infer<typeof createOrderSchema>;
+export type OrderStatus = z.infer<typeof orderStatusSchema>;
+export type OrderItem = z.infer<typeof orderItemSchema>;
+export type Order = z.infer<typeof orderSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
 export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;

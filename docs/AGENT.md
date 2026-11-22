@@ -61,6 +61,7 @@ pnpm format:check
 pnpm typecheck
 pnpm test           # Vitest
 pnpm db:migrate     # run Kysely migrations
+pnpm db:seed        # seed demo tenant/staff/menu/floor
 pnpm docker:edge    # start edge via Docker Compose
 
 # Planned, not yet implemented: pnpm test:e2e (Playwright)

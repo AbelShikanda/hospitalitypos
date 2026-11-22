@@ -16,26 +16,26 @@ keeping shared types and fast iteration.
 
 **Decision:**
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Language | TypeScript (strict) | One language across PWA, edge node, cloud |
-| Monorepo | pnpm workspaces + Turborepo | Shared types/UI, cached CI |
-| Web app | React 19 + Vite + TanStack Router + TanStack Query | SPA fits offline PWA; no SSR needed |
-| UI | Tailwind CSS + shadcn/ui | Touch-first, fast to build |
-| PWA/offline | vite-plugin-pwa (Workbox) + Dexie (IndexedDB) | Installable, local cache, optimistic UI |
-| Edge server | Node.js + Hono + Kysely + SQLite | Small footprint, runs on venue hardware |
-| Cloud API | Hono + Kysely + Postgres or MySQL | Multi-tenant control plane; dialect via env |
-| DB drivers | `pg`, `mysql2`, `better-sqlite3` | Pure-JS cloud drivers; no native builds on host |
-| Contracts | Zod + OpenAPI | Typed boundaries; webhook validation |
-| Auth | Better Auth (PIN for POS, email/OTP for admin) | Fast terminal login + secure admin |
-| Jobs | DB-backed queue + cron (cloud); in-process queue (edge) | No Redis required on VPS/shared hosts |
-| Payments | Daraja STK Push + manual M-Pesa ref + PDQ card-terminal bridge | Kenya-first |
-| Printing | ESC/POS via edge device bridge | Browsers cannot print raw ESC/POS |
-| Barcode | Keyboard-wedge scanner | No driver needed |
-| Testing | Vitest (unit) + Playwright (e2e) + MSW | Confidence on critical money paths |
-| Observability | Pino + Sentry + append-only audit log | Debugging and money traceability |
-| CI/CD | GitHub Actions + Docker | Reproducible builds |
-| Hosting | Cloud: VPS (Docker) with Postgres/MySQL; Edge: Docker on venue mini PC | Offline-capable, cloud-optional, no paid dependency |
+| Layer         | Choice                                                                 | Why                                                 |
+| ------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
+| Language      | TypeScript (strict)                                                    | One language across PWA, edge node, cloud           |
+| Monorepo      | pnpm workspaces + Turborepo                                            | Shared types/UI, cached CI                          |
+| Web app       | React 19 + Vite + TanStack Router + TanStack Query                     | SPA fits offline PWA; no SSR needed                 |
+| UI            | Tailwind CSS + shadcn/ui                                               | Touch-first, fast to build                          |
+| PWA/offline   | vite-plugin-pwa (Workbox) + Dexie (IndexedDB)                          | Installable, local cache, optimistic UI             |
+| Edge server   | Node.js + Hono + Kysely + SQLite                                       | Small footprint, runs on venue hardware             |
+| Cloud API     | Hono + Kysely + Postgres or MySQL                                      | Multi-tenant control plane; dialect via env         |
+| DB drivers    | `pg`, `mysql2`, `better-sqlite3`                                       | Pure-JS cloud drivers; no native builds on host     |
+| Contracts     | Zod + OpenAPI                                                          | Typed boundaries; webhook validation                |
+| Auth          | Better Auth (PIN for POS, email/OTP for admin)                         | Fast terminal login + secure admin                  |
+| Jobs          | DB-backed queue + cron (cloud); in-process queue (edge)                | No Redis required on VPS/shared hosts               |
+| Payments      | Daraja STK Push + manual M-Pesa ref + PDQ card-terminal bridge         | Kenya-first                                         |
+| Printing      | ESC/POS via edge device bridge                                         | Browsers cannot print raw ESC/POS                   |
+| Barcode       | Keyboard-wedge scanner                                                 | No driver needed                                    |
+| Testing       | Vitest (unit) + Playwright (e2e) + MSW                                 | Confidence on critical money paths                  |
+| Observability | Pino + Sentry + append-only audit log                                  | Debugging and money traceability                    |
+| CI/CD         | GitHub Actions + Docker                                                | Reproducible builds                                 |
+| Hosting       | Cloud: VPS (Docker) with Postgres/MySQL; Edge: Docker on venue mini PC | Offline-capable, cloud-optional, no paid dependency |
 
 **Consequences:** Single language simplifies hiring and sharing. Node on the
 edge is heavier than Go/Rust but keeps one toolchain. We accept running Docker
@@ -277,7 +277,7 @@ expected recurring cost is the VPS (ADR-016).
 
 **Status:** Accepted
 
-**Context:** We want a public link people can try instantly, *and* a
+**Context:** We want a public link people can try instantly, _and_ a
 download-and-run bundle that works out of the box on real venue hardware. GitHub
 Pages is static-only, so it cannot host the edge server, drive printers, or hold
 shared multi-device state. Shipping must be a first-class concern, not a
@@ -545,6 +545,32 @@ is not a dependency of the edge login path.
 **Consequences:** We own rate limiting, CSRF and security review for PIN login.
 No social/OAuth on the edge. The session table is portable across SQLite,
 Postgres and MySQL, and can later be bridged to Better Auth for cloud admins.
+
+---
+
+## ADR-020 — Menu and order prices are VAT-inclusive
+
+**Status:** Accepted
+
+**Context:** Kenyan hospitality prices are normally displayed to the customer as
+the amount to pay, including VAT. Order bills also need a subtotal/tax/total
+breakdown, and different menu items may carry different tax rates later.
+
+**Decision:**
+
+- Menu items and per-venue price overrides are stored as **VAT-inclusive** minor
+  units; each item carries a `tax_rate` (default 16).
+- Order line totals and the order total are VAT-inclusive. `orderTotals()` in
+  `packages/domain` derives the net and VAT components per line with
+  `extractVAT()`.
+- The edge stores `subtotal_minor` (net), `tax_minor` and `total_minor`
+  (gross) on each order.
+- No exclusive-tax display mode ships in Phase 1. If a future market needs it,
+  add an explicit tax-basis field rather than reinterpreting prices.
+
+**Consequences:** The price shown on the menu is the price charged; the bill
+breakdown is derived and testable. Tax-rate changes must be explicit per item,
+and rounding is handled centrally in `packages/domain`.
 
 ---
 

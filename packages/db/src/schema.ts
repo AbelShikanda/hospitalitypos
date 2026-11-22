@@ -42,10 +42,150 @@ export interface SessionsTable {
   revoked_at: Timestamp | null;
 }
 
+export interface MenuCategoriesTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  sort_order: number;
+  created_at: Timestamp;
+}
+
+export interface MenuItemsTable {
+  id: string;
+  tenant_id: string;
+  category_id: string;
+  name: string;
+  description: string | null;
+  price_minor: number;
+  tax_rate: number;
+  is_available: number;
+  sort_order: number;
+  created_at: Timestamp;
+}
+
+export interface ModifierGroupsTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  created_at: Timestamp;
+}
+
+export interface ModifiersTable {
+  id: string;
+  tenant_id: string;
+  group_id: string;
+  name: string;
+  price_delta_minor: number;
+  sort_order: number;
+  created_at: Timestamp;
+}
+
+export interface MenuItemModifierGroupsTable {
+  id: string;
+  tenant_id: string;
+  item_id: string;
+  group_id: string;
+  created_at: Timestamp;
+}
+
+export interface VenuePricesTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  item_id: string;
+  price_minor: number;
+  created_at: Timestamp;
+}
+
+export interface AreasTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  name: string;
+  sort_order: number;
+  created_at: Timestamp;
+}
+
+export interface DiningTablesTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  area_id: string;
+  name: string;
+  seats: number;
+  status: string;
+  created_at: Timestamp;
+}
+
+export interface OrdersTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  table_id: string | null;
+  number: string;
+  status: string;
+  subtotal_minor: number;
+  tax_minor: number;
+  total_minor: number;
+  notes: string | null;
+  opened_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  closed_at: Timestamp | null;
+}
+
+export interface OrderItemsTable {
+  id: string;
+  tenant_id: string;
+  order_id: string;
+  item_id: string;
+  name_snapshot: string;
+  unit_price_minor: number;
+  quantity: number;
+  tax_rate: number;
+  line_total_minor: number;
+  notes: string | null;
+  status: string;
+  created_at: Timestamp;
+}
+
+export interface OrderItemModifiersTable {
+  id: string;
+  tenant_id: string;
+  order_item_id: string;
+  modifier_id: string;
+  name_snapshot: string;
+  price_delta_minor: number;
+}
+
+export interface OrderEventsTable {
+  id: string;
+  tenant_id: string;
+  order_id: string;
+  type: string;
+  data: string;
+  actor_user_id: string | null;
+  created_at: Timestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   venues: VenuesTable;
   users: UsersTable;
   memberships: MembershipsTable;
   sessions: SessionsTable;
+  menu_categories: MenuCategoriesTable;
+  menu_items: MenuItemsTable;
+  modifier_groups: ModifierGroupsTable;
+  modifiers: ModifiersTable;
+  menu_item_modifier_groups: MenuItemModifierGroupsTable;
+  venue_prices: VenuePricesTable;
+  areas: AreasTable;
+  dining_tables: DiningTablesTable;
+  orders: OrdersTable;
+  order_items: OrderItemsTable;
+  order_item_modifiers: OrderItemModifiersTable;
+  order_events: OrderEventsTable;
 }
