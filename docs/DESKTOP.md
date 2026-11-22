@@ -57,9 +57,23 @@ curl -s http://127.0.0.1:4000/api/health
 POS_NO_OPEN=1 scripts/launch-edge.sh --stop
 ```
 
+To reproduce a minimal desktop-session `PATH`:
+
+```bash
+env -i HOME="$HOME" \
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  POS_NO_OPEN=1 scripts/launch-edge.sh
+```
+
 ## Troubleshooting
 
 - **Port 4000 busy:** set `POS_PORT=4010`.
+- **Works in a terminal, not from the shortcut:** desktop sessions often omit
+  `~/.local/share/pnpm` from `PATH`. The launcher prepends it; if pnpm lives
+  elsewhere, add that directory to `PATH` or run from a terminal once.
+- **"Edge server did not become healthy":** check the log. Common causes are a
+  root-owned `apps/edge/data` directory or a `better-sqlite3` native-module
+  mismatch (for example, host-built modules inside Alpine).
 - **Docker not running:** start Docker Desktop (Windows/macOS) or the daemon.
 - **No browser found:** install Chrome/Chromium/Edge; the launcher falls back to
   the default browser.

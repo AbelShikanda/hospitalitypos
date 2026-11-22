@@ -29,6 +29,8 @@ created and logged into.
 - [ ] Docker Compose for edge; Dockerfile for cloud; GitHub Actions CI.
 - [ ] CI matrix: migrations + isolation/sync tests on Postgres **and** MySQL/MariaDB;
       edge tests on SQLite.
+- [x] Edge serves the built web PWA at `/` with SPA fallback; launcher builds it
+      on first run and resolves pnpm from a minimal desktop `PATH`.
 - [x] Seed script: one tenant, one venue, sample roles.
 - [ ] Zero-cost audit: all deps OSS/self-hostable; no paid service required.
 - [x] `docs/AGENT.md` commands verified against real scripts.
