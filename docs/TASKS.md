@@ -119,15 +119,18 @@ all with the internet unplugged.
 
 ## Phase 3 — Payments (P0)
 
-**Exit:** Take cash, manual M-Pesa reference, and a Daraja STK Push; all reconcile
-in reports; all idempotent.
+**Exit:** Take cash, manual M-Pesa reference, Daraja STK Push and a PDQ card
+payment; all reconcile in reports; all idempotent.
 
-- [ ] Payment state machine (pending/confirmed/failed/reversed) in `domain`.
+- [x] Payment state machine (pending/confirmed/failed/reversed) in `domain`.
 - [ ] Cash payment + change calculation.
 - [ ] Manual M-Pesa reference capture (works offline at venue).
 - [ ] Daraja integration: OAuth, STK Push, callback validation, retries, timeouts.
 - [ ] Per-tenant Daraja credentials, encrypted at rest, server-only.
-- [ ] Card terminal via edge device bridge (vendor TBD — see Open decisions).
+- [ ] PDQ card terminal via edge device bridge (integrated/semi-integrated/
+      standalone; vendor TBD — see Open decisions).
+- [ ] PDQ capture: terminal ID, approval code, RRN/STAN, card brand, last4;
+      reconcile against the terminal/bank settlement.
 - [ ] Payment audit trail + provider refs.
 - [ ] Reconciliation report: expected vs captured vs pending.
 
