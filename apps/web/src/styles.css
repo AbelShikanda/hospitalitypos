@@ -225,3 +225,259 @@
     border-bottom: 1px solid var(--border);
   }
 }
+
+.login {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 24px;
+  padding: 24px;
+}
+
+.login-panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-head img {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.login-head strong {
+  display: block;
+  font-size: 15px;
+}
+
+.login-head small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.login h1 {
+  margin: 8px 0 0;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.login-hint {
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 14px;
+}
+
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.staff-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.staff-card:hover {
+  border-color: var(--brand-bright);
+  background: var(--surface-hover);
+}
+
+.avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--brand-tint);
+  color: var(--brand-bright);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.avatar--large {
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
+}
+
+.avatar--small {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.staff-name {
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+}
+
+.staff-role {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.link-button {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.link-button:hover {
+  color: var(--text);
+}
+
+.pin-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pin-head h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.pin-dots {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 8px 0;
+}
+
+.pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+
+.pin-dot--filled {
+  background: var(--brand-bright);
+  border-color: var(--brand-bright);
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-width: 340px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.key {
+  min-height: 56px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.key:hover {
+  background: var(--surface-hover);
+}
+
+.key--action {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.login-error {
+  color: var(--status-danger);
+  text-align: center;
+  margin: 0;
+  font-size: 14px;
+}
+
+.signin {
+  min-height: 52px;
+  font-size: 16px;
+}
+
+.login-aside {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(500px 220px at 100% 0%, rgba(110, 231, 168, 0.08), transparent 70%),
+    var(--sidebar);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.login-aside img {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+}
+
+.login-aside h2 {
+  margin: 0;
+}
+
+.login-aside p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px 4px 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 900px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+  .login-aside {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .login-panel {
+    padding: 20px;
+  }
+}
