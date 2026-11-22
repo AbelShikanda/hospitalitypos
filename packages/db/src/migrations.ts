@@ -49,8 +49,38 @@ const initial: Migration = {
   },
 };
 
+const sessions: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("sessions")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("user_id", "char(26)", (column) => column.notNull())
+      .addColumn("token_hash", "varchar(64)", (column) => column.notNull())
+      .addColumn("device_id", "varchar(128)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("expires_at", "timestamp", (column) => column.notNull())
+      .addColumn("revoked_at", "timestamp")
+      .execute();
+
+    await db.schema
+      .createIndex("sessions_token_hash_idx")
+      .ifNotExists()
+      .on("sessions")
+      .column("token_hash")
+      .unique()
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("sessions").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
+  "002_sessions": sessions,
 };
 
 export const migrationProvider: MigrationProvider = {

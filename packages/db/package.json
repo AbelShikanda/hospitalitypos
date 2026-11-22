@@ -13,6 +13,7 @@
     "seed": "tsx src/cli.ts seed"
   },
   "dependencies": {
+    "@hpos/auth": "workspace:*",
     "better-sqlite3": "^12.0.0",
     "kysely": "^0.28.0",
     "mysql2": "^3.11.0",
