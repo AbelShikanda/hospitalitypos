@@ -1,4 +1,8 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { createTenantSchema } from "@hpos/contracts";
 import { createDb, migrate, seed } from "@hpos/db";
 import { newId } from "@hpos/domain";
@@ -57,6 +61,27 @@ app.post("/api/tenants", async (context) => {
 app.get("/api/venues", async (context) => {
   const venues = await db.selectFrom("venues").selectAll().execute();
   return context.json(venues);
+});
+
+const webDist =
+  process.env.WEB_DIST ??
+  fileURLToPath(new URL("../../web/dist", import.meta.url));
+
+app.use("/*", serveStatic({ root: webDist }));
+
+app.get("*", async (context) => {
+  if (context.req.path.startsWith("/api/")) {
+    return context.json({ error: "not_found" }, 404);
+  }
+  try {
+    const html = await readFile(join(webDist, "index.html"), "utf8");
+    return context.html(html);
+  } catch {
+    return context.text(
+      "Web build not found. Run: pnpm --filter @hpos/web build",
+      503,
+    );
+  }
 });
 
 serve({ fetch: app.fetch, port }, (info) => {
