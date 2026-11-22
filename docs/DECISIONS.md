@@ -516,6 +516,38 @@ replaces the window shell, not the launcher logic.
 
 ---
 
+## ADR-019 — Auth: edge PIN sessions first, Better Auth later
+
+**Status:** Accepted
+
+**Context:** Venue staff log in with a short PIN after selecting their name on a
+shared tablet. The edge must authenticate with no internet. Better Auth assumes
+globally unique usernames/emails and is strongest for email/OAuth flows; staff
+codes are only unique **within a tenant**, and PIN login is a tenant-scoped staff
+pick, not a global account login.
+
+**Decision:** Ship a small, auditable auth layer in `packages/auth` for the edge:
+
+- PINs hashed with scrypt (per-user salt); 4–8 digit format.
+- Login is `tenant_id` + `user_id` + PIN; the user must belong to the tenant.
+- Sessions are random 256-bit tokens stored **hashed** (SHA-256) in a `sessions`
+  table, with `tenant_id`, `user_id`, optional `device_id`, expiry (12h) and
+  revocation. Logout revokes the row.
+- Delivery is an `httpOnly`, `SameSite=Lax` cookie (Bearer accepted for API
+  clients); roles come from the user's membership and are normalized
+  (`owner`/`manager`/`cashier`/`waiter`/`kitchen`).
+- Tenant-scoping middleware resolves the session tenant; routes never accept a
+  tenant id from the request body for scoped data.
+
+Better Auth remains the plan for **cloud admin** email/OTP and future OAuth. It
+is not a dependency of the edge login path.
+
+**Consequences:** We own rate limiting, CSRF and security review for PIN login.
+No social/OAuth on the edge. The session table is portable across SQLite,
+Postgres and MySQL, and can later be bridged to Better Auth for cloud admins.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

@@ -45,7 +45,8 @@ humans and AI coding agents.
 ## Status
 
 Project is at **Phase 0 — Foundation** (with **Phase 0b — Distribution,
-updates and lifecycle** tracked alongside it). The web, edge and cloud apps
-scaffold and run locally; the edge serves the PWA. Payments architecture now
-covers cash, M-Pesa and PDQ. Next: auth/PIN sessions and tenant isolation. See
-`TASKS.md` for the live checklist.
+updates and lifecycle** tracked alongside it). The web, edge and cloud apps run
+locally; the edge serves the PWA. Payments architecture covers cash, M-Pesa and
+PDQ. Edge PIN auth, revocable sessions and tenant isolation are in place. Next:
+dual-dialect isolation tests/CI and Phase 1 menu/order work. See `TASKS.md` for
+the live checklist.

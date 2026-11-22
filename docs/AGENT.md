@@ -15,9 +15,11 @@ Operating rules for AI coding agents (and humans) working in this repo. Read
    internet, or explicitly document why it can't (e.g. Daraja STK Push).
 5. **Never commit secrets.** Daraja keys, PDQ/terminal credentials and DB URLs
    live in env/secret stores, encrypted at rest, server-side only.
-6. **Append-only audit trail** for order and payment events. Never overwrite
+6. **Sessions are revocable and tenant-scoped.** Never log raw session tokens or
+   PINs. Scoped routes take `tenant_id` from the session, never from the body.
+7. **Append-only audit trail** for order and payment events. Never overwrite
    financial history — record transitions.
-7. **Docs and code change together.** If you change architecture, update
+8. **Docs and code change together.** If you change architecture, update
    `DECISIONS.md`. If you change scope, update `GOAL.md`/`TASKS.md`.
 
 ## Target repo layout
@@ -31,6 +33,7 @@ hospitality-pos/
 ├─ packages/
 │  ├─ domain/       # pure logic: money, tax, order/payment state machines
 │  ├─ contracts/    # Zod schemas + OpenAPI
+│  ├─ auth/         # PIN hashing, sessions, roles (edge login)
 │  ├─ db/           # Kysely interface + dialect factory + migrations (sqlite/pg/mysql)
 │  ├─ ui/           # shared React components (Tailwind + shadcn)
 │  └─ config/       # tsconfig, eslint, shared config

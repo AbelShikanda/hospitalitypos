@@ -17,7 +17,7 @@ Practical reference. Rationale and tradeoffs live in [`DECISIONS.md`](./DECISION
 | Cloud API | Hono + Kysely + Postgres (`pg`) or MySQL (`mysql2`) | `DB_DIALECT` |
 | Migrations | Kysely `Migrator` (code-based) | One set, all dialects |
 | Contracts | Zod + OpenAPI | Typed boundaries |
-| Auth | Better Auth (PIN + email/OTP) | Device-bound PIN sessions |
+| Auth | Edge: PIN + revocable sessions (`@hpos/auth`); Cloud: Better Auth email/OTP | ADR-019; offline edge login |
 | Jobs | DB-backed queue + cron (cloud); in-process (edge) | No Redis required |
 | Payments | Daraja STK Push, manual M-Pesa ref, PDQ card-terminal bridge | Kenya-first; see [`PAYMENTS.md`](./PAYMENTS.md) |
 | Printing | ESC/POS via edge device bridge | USB/serial/TCP 9100 |
