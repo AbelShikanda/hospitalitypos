@@ -34,7 +34,7 @@ pay, and gives owners trustworthy numbers at the end of the day.
 3. **Money is sacred.** Integer minor units, idempotent payments, full audit
    trail, no silent failures.
 4. **Pay the way locals pay.** M-Pesa (Daraja STK Push), manual M-Pesa reference
-   entry, and card terminals — not card-only.
+   entry, and **PDQ card terminals** — not card-only.
 5. **Hardware is part of the product.** Printers, cash drawer, scanner and KDS
    are first-class, not afterthoughts.
 6. **Multi-tenant by construction.** Every record is tenant-scoped from day one.
@@ -57,7 +57,7 @@ pay, and gives owners trustworthy numbers at the end of the day.
 - **Billing & payments** — split bills (by item / by seat / by amount), tax
   (VAT), discounts, tips, voids with reason, receipt printing.
 - **Payments** — cash, manual M-Pesa reference capture, Daraja STK Push,
-  card-terminal bridge.
+  PDQ card-terminal bridge (integrated, semi-integrated or standalone).
 - **Kitchen display & order routing** — send tickets to kitchen/bar stations
   with status flow (queued → preparing → ready → served).
 - **Staff, roles & shifts** — login (PIN), RBAC, clock-in/out, per-staff sales,
@@ -67,7 +67,7 @@ pay, and gives owners trustworthy numbers at the end of the day.
 - **Reports & analytics** — daily sales, top items, payment mix, staff
   performance, tax summary, export.
 - **Device support** — ESC/POS receipt printer, cash drawer kick, keyboard-wedge
-  barcode scanner, KDS screen, card terminal.
+  barcode scanner, KDS screen, PDQ card terminal.
 - **Distribution & lifecycle** — hosted demo link (GitHub Pages, IndexedDB, no
   hardware), one-command edge bundle from GitHub Releases, in-app update
   notifications with safe deferred reload, startup splash, desktop shortcuts
@@ -101,12 +101,12 @@ pay, and gives owners trustworthy numbers at the end of the day.
 
 - **Connectivity:** assume intermittent or absent internet during service.
 - **Hardware:** mixed Android tablets, USB/network thermal printers, cash
-  drawers, USB barcode scanners, card terminals.
-- **Payments:** Safaricom Daraja (M-Pesa) availability and rate limits; card
-  terminals vary by provider.
-- **Compliance:** stay out of PCI scope by delegating card capture to terminals;
-  protect M-Pesa credentials per tenant; retain an audit trail for money
-  movements.
+  drawers, USB barcode scanners, PDQ card terminals.
+- **Payments:** Safaricom Daraja (M-Pesa) availability and rate limits; PDQ
+  terminals vary by bank/provider and protocol.
+- **Compliance:** stay out of PCI scope by delegating card capture to PDQ
+  terminals; protect M-Pesa and PDQ credentials per tenant; retain an audit trail
+  for money movements.
 - **Currency/tax:** KES, VAT 16% by default (configurable per venue).
 - **Hosting:** the public demo link is static (GitHub Pages) and therefore has no
   server/hardware; full POS features require the self-hosted edge bundle (Docker).
@@ -122,4 +122,6 @@ pay, and gives owners trustworthy numbers at the end of the day.
 - **Edge node** — the on-prem LAN server for a venue (local DB + device bridge).
 - **Outbox** — durable queue of local mutations awaiting cloud sync.
 - **KDS** — kitchen display system.
+- **PDQ** — the card payment terminal used by the venue's bank/acquirer; the
+  terminal captures the card, the POS records the approval reference.
 - **Daraja** — Safaricom's M-Pesa developer API.

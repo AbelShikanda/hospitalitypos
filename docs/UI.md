@@ -60,7 +60,7 @@ light theme). This file covers layout, screens and interaction.
 | 3 | Tables / floor plan | Area tabs + table grid (status colors) | Open table, move/merge |
 | 4 | Order taking | 3-pane: category rail · item grid · cart | Add item, modifiers, send |
 | 5 | Bill & split | Bill list + split controls + totals | Split, discount, tip, void |
-| 6 | Payment | Method tiles + keypad | Cash, M-Pesa ref, STK, card |
+| 6 | Payment | Method tiles + keypad | Cash, M-Pesa ref, STK, PDQ card |
 | 7 | Receipt | Preview + print status | Print, reprint, done |
 | 8 | KDS board | Columns or card queue, aging colors | Bump: preparing/ready/served |
 | 9 | Shift open/close | Summary + cash count + Z-report | Open/close shift, export |
@@ -77,7 +77,8 @@ light theme). This file covers layout, screens and interaction.
   open total. Status: free (neutral), occupied (blue), reserved (amber),
   attention (red), paid (green).
 - **Payment (screen 6):** big method tiles; M-Pesa shows reference input and a
-  "waiting for confirmation" state; card shows terminal status.
+  "waiting for confirmation" state; PDQ card shows terminal status, approval
+  code and last4.
 - **KDS (screen 8):** tickets as cards with items, table, age timer; swipe/tap to
   advance status; sound/visual alert on new ticket.
 - **Settings (screen 12):** grouped sections; **Danger Zone** at the bottom with

@@ -15,6 +15,7 @@ humans and AI coding agents.
 | [`STACK.md`](./STACK.md) | Stack sheet: versions, ports, env, commands, deployment | Tooling or versions change |
 | [`UI.md`](./UI.md) | UI/layout guide + what to hand the agent | Design direction or screens change |
 | [`VISUAL-IDENTITY.md`](./VISUAL-IDENTITY.md) | Colour/type/depth tokens (dark, light, optional neon) | Palette or brand direction changes |
+| [`PAYMENTS.md`](./PAYMENTS.md) | Payment methods, M-Pesa/PDQ flows, state machine, reconciliation | Payment method or provider changes |
 | [`DESKTOP.md`](./DESKTOP.md) | Desktop app + shortcuts, no-console launchers, installers | Shortcut or launcher changes |
 | [`TASKS.md`](./TASKS.md) | Phased roadmap and living checklist | Work starts, finishes, or is re-prioritized |
 | [`AGENT.md`](./AGENT.md) | Operating rules, conventions and **commit instructions** | Conventions, commands, or guardrails change |
@@ -26,9 +27,10 @@ humans and AI coding agents.
 3. `STACK.md` — know the tools and environment.
 4. `UI.md` — know the screens and what to provide.
 5. `VISUAL-IDENTITY.md` — know the visual tokens and usage rules.
-6. `DESKTOP.md` — every release ships a desktop shortcut.
-7. `TASKS.md` — pick the next task.
-8. `AGENT.md` — follow the working rules while doing it.
+6. `PAYMENTS.md` — know how cash, M-Pesa and PDQ fit together.
+7. `DESKTOP.md` — every release ships a desktop shortcut.
+8. `TASKS.md` — pick the next task.
+9. `AGENT.md` — follow the working rules while doing it.
 
 ## Ground rules for this folder
 
@@ -43,5 +45,7 @@ humans and AI coding agents.
 ## Status
 
 Project is at **Phase 0 — Foundation** (with **Phase 0b — Distribution,
-updates and lifecycle** tracked alongside it). No application code exists yet.
-See `TASKS.md` for the starting checklist.
+updates and lifecycle** tracked alongside it). The web, edge and cloud apps
+scaffold and run locally; the edge serves the PWA. Payments architecture now
+covers cash, M-Pesa and PDQ. Next: auth/PIN sessions and tenant isolation. See
+`TASKS.md` for the live checklist.

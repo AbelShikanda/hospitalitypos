@@ -29,7 +29,7 @@ keeping shared types and fast iteration.
 | Contracts | Zod + OpenAPI | Typed boundaries; webhook validation |
 | Auth | Better Auth (PIN for POS, email/OTP for admin) | Fast terminal login + secure admin |
 | Jobs | DB-backed queue + cron (cloud); in-process queue (edge) | No Redis required on VPS/shared hosts |
-| Payments | Daraja STK Push + manual M-Pesa ref + card-terminal bridge | Kenya-first |
+| Payments | Daraja STK Push + manual M-Pesa ref + PDQ card-terminal bridge | Kenya-first |
 | Printing | ESC/POS via edge device bridge | Browsers cannot print raw ESC/POS |
 | Barcode | Keyboard-wedge scanner | No driver needed |
 | Testing | Vitest (unit) + Playwright (e2e) + MSW | Confidence on critical money paths |
@@ -188,7 +188,7 @@ No money math in UI components.
 - **Barcode scanner:** keyboard-wedge; the PWA captures keystrokes, no driver.
 - **KDS:** another browser client on the LAN subscribed to the edge (WebSocket)
   for live tickets and status changes.
-- **Card terminal:** vendor SDK/HTTP hosted on the edge; PWA calls the bridge.
+- **PDQ card terminal:** vendor SDK/HTTP hosted on the edge; PWA calls the bridge.
 
 Print jobs are queued on the edge and retried; a failed print is surfaced, never
 silently dropped.
@@ -215,15 +215,22 @@ down at the venue.
 3. **Daraja STK Push** — Lipa na M-Pesa Online; requires the venue to reach
    Safaricom. Initiated via edge→cloud or edge→Daraja; callbacks validated and
    idempotent. Degrades to manual reference on failure.
-4. **Card terminal** — integrated through the edge device bridge; terminal owns
-   card capture so we stay out of PCI scope. Terminal connectivity is its own.
+4. **PDQ card terminal** — integrated through the edge device bridge; the
+   terminal owns card capture so we stay out of PCI scope. Terminal connectivity
+   is its own. Support three modes so any client terminal works: **integrated**
+   (POS drives the terminal), **semi-integrated** (POS sends amount, terminal
+   captures, result confirmed), and **standalone** (cashier records terminal ID,
+   approval code, RRN/STAN and last4).
 
-Daraja credentials are stored per tenant, encrypted at rest, never in the client.
-All payment attempts are recorded with provider refs, status and an audit trail.
+M-Pesa and PDQ are additive: cash and M-Pesa must keep working if the PDQ
+terminal or its network is down, and vice versa. Daraja credentials and PDQ
+credentials are stored per tenant, encrypted at rest, never in the client. All
+payment attempts are recorded with provider refs, status and an audit trail. See
+[`PAYMENTS.md`](./PAYMENTS.md) for the full method matrix and data model.
 
 **Consequences:** Payment state machine must model pending/confirmed/failed/
-reversed. Reconciliation reports are essential. Daraja sandbox + rate limits
-shape testing.
+cancelled/reversed. Reconciliation reports are essential. Daraja sandbox + rate
+limits shape testing; PDQ settlement batches shape card reconciliation.
 
 ---
 
@@ -511,8 +518,9 @@ replaces the window shell, not the launcher logic.
 
 ## Open decisions (not yet resolved)
 
-- Card terminal vendor (Stripe Terminal vs a Kenyan provider such as Pesapal/
-  local acquirer) and whether it has a usable LAN/SDK bridge.
+- PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/
+  HTTP); determines whether integrated mode is feasible or standalone ships
+  first. M-Pesa shortcode type (Till vs Paybill) and C2B validation.
 - VPS provider + DB engine (Postgres vs MySQL); confirm MySQL 8+/MariaDB 10.6+.
 - Whether KDS is in the first sellable release or phase 2 (hardware was selected,
   module routing is adjacent to ordering).

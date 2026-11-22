@@ -19,7 +19,7 @@ Practical reference. Rationale and tradeoffs live in [`DECISIONS.md`](./DECISION
 | Contracts | Zod + OpenAPI | Typed boundaries |
 | Auth | Better Auth (PIN + email/OTP) | Device-bound PIN sessions |
 | Jobs | DB-backed queue + cron (cloud); in-process (edge) | No Redis required |
-| Payments | Daraja STK Push, manual M-Pesa ref, card-terminal bridge | Kenya-first |
+| Payments | Daraja STK Push, manual M-Pesa ref, PDQ card-terminal bridge | Kenya-first; see [`PAYMENTS.md`](./PAYMENTS.md) |
 | Printing | ESC/POS via edge device bridge | USB/serial/TCP 9100 |
 | Testing | Vitest + Playwright + MSW | Money/sync/tenant isolation |
 | Observability | Pino + Sentry + audit log | Append-only money trail |

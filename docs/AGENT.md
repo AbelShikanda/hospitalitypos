@@ -13,7 +13,7 @@ Operating rules for AI coding agents (and humans) working in this repo. Read
    idempotency key and is safe to retry.
 4. **Offline-first is the default.** A feature must work on the venue LAN with no
    internet, or explicitly document why it can't (e.g. Daraja STK Push).
-5. **Never commit secrets.** Daraja keys, card-terminal credentials and DB URLs
+5. **Never commit secrets.** Daraja keys, PDQ/terminal credentials and DB URLs
    live in env/secret stores, encrypted at rest, server-side only.
 6. **Append-only audit trail** for order and payment events. Never overwrite
    financial history — record transitions.
