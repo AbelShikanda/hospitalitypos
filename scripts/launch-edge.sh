@@ -7,6 +7,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
+# Desktop sessions often start with a minimal PATH that omits user-level
+# package managers. Resolve common pnpm locations so the shortcut works.
+for dir in "$HOME/.local/share/pnpm" "$HOME/.local/bin" "/usr/local/bin"; do
+  if [[ -d "$dir" && ":$PATH:" != *":$dir:"* ]]; then
+    PATH="$dir:$PATH"
+  fi
+done
+export PATH
+
 PORT="${POS_PORT:-4000}"
 HOST="${POS_HOST:-127.0.0.1}"
 URL="http://${HOST}:${PORT}"
@@ -114,6 +123,14 @@ if healthy; then
   log "Already running at $URL"
   open_app
   exit 0
+fi
+
+# Ensure the PWA build exists so the edge can serve the UI at /.
+if [[ -f "$ROOT/apps/web/package.json" ]] && command -v pnpm >/dev/null 2>&1; then
+  if [[ ! -f "$ROOT/apps/web/dist/index.html" ]]; then
+    log "Building web PWA"
+    (cd "$ROOT" && pnpm --filter @hpos/web build >>"$LOG" 2>&1) || log "Web build failed"
+  fi
 fi
 
 # 1) Local dev edge (fastest when pnpm is available).
