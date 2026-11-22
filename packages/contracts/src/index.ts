@@ -124,10 +124,51 @@ export const paymentSchema = z.object({
   confirmed_at: z.string().nullable().optional(),
 });
 
+export const roleSchema = z.enum([
+  "owner",
+  "manager",
+  "cashier",
+  "waiter",
+  "kitchen",
+]);
+
+export const pinLoginSchema = z.object({
+  tenant_id: ulid,
+  user_id: ulid,
+  pin: z.string().regex(/^\d{4,8}$/),
+  device_id: z.string().min(1).max(128).optional(),
+});
+
+export const staffMemberSchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  role: roleSchema,
+});
+
+export const bootstrapSchema = z.object({
+  tenant: tenantSchema,
+  venues: z.array(venueSchema),
+  staff: z.array(staffMemberSchema),
+});
+
+export const sessionSchema = z.object({
+  session_id: ulid,
+  tenant_id: ulid,
+  user_id: ulid,
+  name: z.string().min(1),
+  role: roleSchema,
+  expires_at: z.string(),
+});
+
 export type Health = z.infer<typeof healthSchema>;
 export type Version = z.infer<typeof versionSchema>;
 export type Tenant = z.infer<typeof tenantSchema>;
 export type Venue = z.infer<typeof venueSchema>;
+export type Role = z.infer<typeof roleSchema>;
+export type PinLogin = z.infer<typeof pinLoginSchema>;
+export type StaffMember = z.infer<typeof staffMemberSchema>;
+export type Bootstrap = z.infer<typeof bootstrapSchema>;
+export type Session = z.infer<typeof sessionSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
 export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;
