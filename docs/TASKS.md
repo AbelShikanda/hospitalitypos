@@ -13,8 +13,8 @@ that completes them, and commit one small milestone at a time (see `AGENT.md`).
 
 ## Phase 0 — Foundation (P0)
 
-**Exit:** `pnpm dev` boots web + edge + cloud locally; CI green; a tenant can be
-created and logged into.
+**Exit:** `pnpm dev` boots web + edge + cloud locally; CI green; a tenant exists
+and a staff member can log in.
 
 - [x] Init pnpm workspace + Turborepo; TS strict, ESLint, Prettier, Vitest.
 - [x] Create packages: `domain`, `contracts`, `db`, `ui`, `config`.
@@ -24,8 +24,11 @@ created and logged into.
       (`DB_DIALECT=postgres|mysql`) + code-based migrations.
 - [x] Define core schema: tenant, venue, user, membership, role (portable types:
       ULID `char(26)`, `bigint` money, `text` JSON, UTC timestamps).
-- [ ] Auth: PIN (POS) + email/OTP (admin); tenant-scoped sessions.
-- [ ] Tenant-scoping middleware + tests proving isolation (app-layer, both dialects).
+- [x] Auth: PIN (POS) with scrypt hashes, revocable tenant-scoped sessions
+      (ADR-019); cloud admin email/OTP still planned.
+- [x] Tenant-scoping middleware + isolation tests on SQLite (`apps/edge`).
+- [ ] Run the same isolation suite on Postgres **and** MySQL in the CI matrix.
+- [ ] PIN login hardening: rate limiting, CSRF review, security review.
 - [ ] Docker Compose for edge; Dockerfile for cloud; GitHub Actions CI.
 - [ ] CI matrix: migrations + isolation/sync tests on Postgres **and** MySQL/MariaDB;
       edge tests on SQLite.
