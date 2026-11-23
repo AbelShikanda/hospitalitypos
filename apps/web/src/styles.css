@@ -1191,6 +1191,30 @@
   margin-top: 16px;
 }
 
+.report-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+}
+
+.report-card strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-card small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .stock-tools {
   margin-top: 18px;
 }

@@ -143,6 +143,7 @@ type Payment = {
   method: string;
   status: string;
   amount_minor: number;
+  tip_minor: number;
   provider_ref: string | null;
   details: Record<string, unknown>;
   created_at: string;
@@ -162,6 +163,43 @@ type KdsTicket = {
   created_at: string;
   notes: string | null;
   items: Order["items"];
+};
+
+type Report = {
+  from: string;
+  to: string;
+  summary: {
+    orders: number;
+    gross_minor: number;
+    net_minor: number;
+    tax_minor: number;
+    discounts_minor: number;
+    tips_minor: number;
+    voids_minor: number;
+    captured_minor: number;
+  };
+  payment_mix: Array<{ method: string; minor: number; tips_minor: number }>;
+  items: Array<{
+    item_id: string;
+    name: string;
+    category: string;
+    quantity: number;
+    gross_minor: number;
+  }>;
+  categories: Array<{ category: string; quantity: number; gross_minor: number }>;
+  staff: Array<{
+    user_id: string;
+    name: string;
+    orders: number;
+    gross_minor: number;
+    captured_minor: number;
+  }>;
+  vat: Array<{
+    tax_rate: number;
+    gross_minor: number;
+    net_minor: number;
+    tax_minor: number;
+  }>;
 };
 
 type StockItem = {
@@ -312,6 +350,10 @@ function money(minor: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function dateInput(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function cartTotals(cart: CartLine[]) {
@@ -1724,6 +1766,7 @@ function BillView({
       order_id: order.id,
       method: payMethod,
       amount_minor: amountMinor,
+      tip_minor: toMinor(Number(tipMajor) || 0),
       idempotency_key: crypto.randomUUID(),
     };
     if (payMethod === "mpesa_manual") {
@@ -2923,6 +2966,207 @@ function StockView({
   );
 }
 
+function ReportsView({ venueId }: { venueId: string }) {
+  const [from, setFrom] = useState(() =>
+    dateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+  );
+  const [to, setTo] = useState(() => dateInput(new Date()));
+  const [report, setReport] = useState<Report | null>(null);
+  const [notice, setNotice] = useState("");
+
+  async function load() {
+    try {
+      const params = new URLSearchParams({
+        venue_id: venueId,
+        from,
+        to,
+      });
+      const response = await fetch(`/api/reports?${params.toString()}`, {
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("report failed");
+      setReport((await response.json()) as Report);
+    } catch {
+      setNotice("Could not load reports.");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [venueId, from, to]);
+
+  const exportUrl = (section: string) => {
+    const params = new URLSearchParams({
+      venue_id: venueId,
+      from,
+      to,
+      section,
+    });
+    return `/api/reports/export?${params.toString()}`;
+  };
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Analytics</span>
+          <h1>Reports</h1>
+          <p className="muted">Sales, payments, items and tax for this venue.</p>
+        </div>
+        <div className="bill-controls">
+          <label>
+            <span>From</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>To</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+            />
+          </label>
+        </div>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+
+      {!report ? (
+        <section className="card empty-state">
+          <h2>No report data</h2>
+          <p className="muted">Choose a date range to load the report.</p>
+        </section>
+      ) : (
+        <>
+          <div className="report-cards">
+            <section className="card report-card">
+              <span className="eyebrow">Gross sales</span>
+              <strong>{money(report.summary.gross_minor)}</strong>
+              <small>{report.summary.orders} orders</small>
+            </section>
+            <section className="card report-card">
+              <span className="eyebrow">Net</span>
+              <strong>{money(report.summary.net_minor)}</strong>
+              <small>after VAT and discounts</small>
+            </section>
+            <section className="card report-card">
+              <span className="eyebrow">VAT</span>
+              <strong>{money(report.summary.tax_minor)}</strong>
+              <small>collected</small>
+            </section>
+            <section className="card report-card">
+              <span className="eyebrow">Captured</span>
+              <strong>{money(report.summary.captured_minor)}</strong>
+              <small>{money(report.summary.tips_minor)} tips</small>
+            </section>
+            <section className="card report-card">
+              <span className="eyebrow">Discounts</span>
+              <strong>{money(report.summary.discounts_minor)}</strong>
+              <small>{money(report.summary.voids_minor)} voided</small>
+            </section>
+          </div>
+
+          <div className="bill-grid">
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Top items</h2>
+                <a className="theme-button" href={exportUrl("items")}>
+                  Export CSV
+                </a>
+              </header>
+              <div className="split-list">
+                {report.items.length === 0 ? (
+                  <p className="muted">No sales in this range.</p>
+                ) : (
+                  report.items.slice(0, 15).map((item) => (
+                    <div key={item.item_id}>
+                      <span>
+                        {item.name}
+                        <small>
+                          {item.category} · {item.quantity} sold
+                        </small>
+                      </span>
+                      <strong>{money(item.gross_minor)}</strong>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Payment mix</h2>
+                <span>confirmed</span>
+              </header>
+              <div className="split-list">
+                {report.payment_mix.map((row) => (
+                  <div key={row.method}>
+                    <span>
+                      {row.method}
+                      <small>{money(row.tips_minor)} tips</small>
+                    </span>
+                    <strong>{money(row.minor)}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="cart-summary bill-summary">
+                <div>
+                  <span>Categories</span>
+                  <span>{report.categories.length}</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Staff performance</h2>
+                <a className="theme-button" href={exportUrl("staff")}>
+                  Export CSV
+                </a>
+              </header>
+              <div className="split-list">
+                {report.staff.map((row) => (
+                  <div key={row.user_id || row.name}>
+                    <span>
+                      {row.name}
+                      <small>{row.orders} orders</small>
+                    </span>
+                    <strong>{money(row.gross_minor)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>VAT summary</h2>
+                <a className="theme-button" href={exportUrl("vat")}>
+                  Export CSV
+                </a>
+              </header>
+              <div className="split-list">
+                {report.vat.map((row) => (
+                  <div key={row.tax_rate}>
+                    <span>
+                      {row.tax_rate}%
+                      <small>net {money(row.net_minor)}</small>
+                    </span>
+                    <strong>{money(row.tax_minor)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -3132,6 +3376,8 @@ function App() {
           <ShiftsView venueId={venueId} role={session?.role ?? "waiter"} />
         ) : view === "Stock" ? (
           <StockView venueId={venueId} role={session?.role ?? "waiter"} />
+        ) : view === "Reports" ? (
+          <ReportsView venueId={venueId} />
         ) : (
           <Placeholder view={view} />
         )}

@@ -1563,6 +1563,74 @@ describe("menu, floor and orders", () => {
     expect(supplier.status).toBe(201);
   });
 
+  it("builds reports with payment mix, items and VAT", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const payment = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 115000,
+        tip_minor: 5000,
+        idempotency_key: "report-cash-001",
+      }),
+    });
+    expect(payment.status).toBe(201);
+
+    const reportResponse = await app.request(
+      `/api/reports?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    expect(reportResponse.status).toBe(200);
+    const report = (await reportResponse.json()) as {
+      summary: { gross_minor: number; tips_minor: number; captured_minor: number };
+      payment_mix: Array<{ method: string; minor: number }>;
+      items: Array<{ gross_minor: number }>;
+      vat: Array<{ tax_rate: number }>;
+    };
+    expect(report.summary).toMatchObject({
+      gross_minor: 115000,
+      tips_minor: 5000,
+      captured_minor: 115000,
+    });
+    expect(report.payment_mix.find((row) => row.method === "cash")?.minor).toBe(
+      115000,
+    );
+    expect(report.items).toHaveLength(1);
+    expect(report.vat[0]?.tax_rate).toBe(16);
+
+    const csv = await app.request(
+      `/api/reports/export?venue_id=${fixture.venueId}&section=vat`,
+      { headers: { cookie } },
+    );
+    expect(csv.status).toBe(200);
+    expect(await csv.text()).toContain("16");
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

@@ -98,4 +98,5 @@ STK Push with encrypted per-tenant credentials and callback confirmation is in
 place. KDS station routing, live SSE tickets and reprints are live. Phase 5 adds
 role-gated discounts/voids, clock-in/out, per-staff sales, Z-reports and CSV
 export. Phase 6 adds recipe-based stock depletion, low-stock alerts, counts and
-suppliers. Integrated PDQ remains queued in `docs/TASKS.md`.
+suppliers. Phase 7 adds derived sales, payment, item, staff and VAT reports with
+date filters and CSV export. Integrated PDQ remains queued in `docs/TASKS.md`.

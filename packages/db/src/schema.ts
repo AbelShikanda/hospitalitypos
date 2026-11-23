@@ -258,6 +258,7 @@ export interface PaymentsTable {
   method: string;
   status: string;
   amount_minor: number;
+  tip_minor: number;
   currency: string;
   idempotency_key: string;
   provider_ref: string | null;

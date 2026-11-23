@@ -848,6 +848,28 @@ outside this phase.
 
 ---
 
+## ADR-032 — Reports are derived, not cached
+
+**Status:** Accepted
+
+**Context:** Owners need sales, payment, item, staff and VAT views without a
+separate warehouse or paid analytics service.
+
+**Decision:**
+
+- Reports are derived on demand from append-only orders, order items and
+  payments, filtered by venue and date range.
+- Tips are stored on the payment attempt so they appear in reports and CSV.
+- VAT is re-derived per tax rate from VAT-inclusive line totals using the same
+  `extractVAT()` helper as billing.
+- CSV exports reuse the same derived data; no report tables are persisted.
+- Date ranges accept `YYYY-MM-DD` or ISO timestamps.
+
+**Consequences:** Reports are always consistent with source records and need no
+rebuild job. Per-tenant aggregation is deferred to the cloud control plane.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

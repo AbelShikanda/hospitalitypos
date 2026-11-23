@@ -187,12 +187,12 @@ count adjusts levels with an audit trail.
 
 **Exit:** Owner can see today's sales, payment mix, top items and tax summary.
 
-- [ ] Daily sales summary (gross, net, tax, discounts, tips, voids).
-- [ ] Payment mix (cash / M-Pesa manual / Daraja / card).
-- [ ] Top items and category performance.
-- [ ] Staff performance.
-- [ ] Tax (VAT) summary + export (CSV).
-- [ ] Date-range filters; per-venue and per-tenant views (cloud).
+- [x] Daily sales summary (gross, net, tax, discounts, tips, voids).
+- [x] Payment mix (cash / M-Pesa manual / Daraja / card).
+- [x] Top items and category performance.
+- [x] Staff performance.
+- [x] Tax (VAT) summary + export (CSV).
+- [x] Date-range filters on the edge (per-tenant views arrive with cloud sync).
 
 ---
 

@@ -755,6 +755,21 @@ const inventory: Migration = {
   },
 };
 
+const paymentTips: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .alterTable("payments")
+      .addColumn("tip_minor", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.alterTable("payments").dropColumn("tip_minor").execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -768,6 +783,7 @@ const migrations: Record<string, Migration> = {
   "010_stations": stations,
   "011_shifts_discounts": shiftsAndDiscounts,
   "012_inventory": inventory,
+  "013_payment_tips": paymentTips,
 };
 
 export const migrationProvider: MigrationProvider = {

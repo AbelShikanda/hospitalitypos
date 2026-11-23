@@ -23,6 +23,7 @@ function toPayment(row: {
   method: string;
   status: string;
   amount_minor: number;
+  tip_minor: number;
   currency: string;
   idempotency_key: string;
   provider_ref: string | null;
@@ -45,6 +46,7 @@ function toPayment(row: {
     method: row.method,
     status: row.status,
     amount_minor: row.amount_minor,
+    tip_minor: row.tip_minor,
     currency: row.currency,
     idempotency_key: row.idempotency_key,
     provider_ref: row.provider_ref,
@@ -253,6 +255,7 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
           method: input.method,
           status,
           amount_minor: input.amount_minor,
+          tip_minor: input.tip_minor,
           currency: input.currency,
           idempotency_key: input.idempotency_key,
           provider_ref: paymentRef(input),
