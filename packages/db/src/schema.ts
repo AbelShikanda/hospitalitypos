@@ -130,6 +130,7 @@ export interface OrdersTable {
   tax_minor: number;
   total_minor: number;
   notes: string | null;
+  idempotency_key: string | null;
   opened_by: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;

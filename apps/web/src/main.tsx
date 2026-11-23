@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@hpos/ui/styles/tokens.css";
 import "./styles.css";
@@ -206,6 +206,8 @@ function errorText(code: unknown): string {
       return "That item is unavailable.";
     case "unknown_item":
       return "The menu changed. Refresh and try again.";
+    case "idempotency_conflict":
+      return "This order was already saved elsewhere. Refresh the floor.";
     default:
       return "Could not save the order. Try again.";
   }
@@ -538,6 +540,11 @@ function OrderBuilder({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<"save" | "send" | null>(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
+
+  useEffect(() => {
+    idempotencyKey.current = crypto.randomUUID();
+  }, [cart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -620,6 +627,7 @@ function OrderBuilder({
         body: JSON.stringify({
           venue_id: venueId,
           table_id: table.id,
+          idempotency_key: idempotencyKey.current,
           items: cart.map((line) => ({
             item_id: line.item.id,
             quantity: line.quantity,

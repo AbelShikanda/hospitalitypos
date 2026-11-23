@@ -574,6 +574,32 @@ and rounding is handled centrally in `packages/domain`.
 
 ---
 
+## ADR-021 — Order mutations are idempotent
+
+**Status:** Accepted
+
+**Context:** Tablets retry requests when the LAN drops or a response is lost.
+Order creation must not create duplicate orders or double-occupy a table, and
+status retries must not fail just because the first response was lost.
+
+**Decision:**
+
+- `POST /api/orders` accepts an optional client-generated `idempotency_key`
+  (8–128 chars). The key is stored on the order and is unique per tenant.
+- Replaying the same key returns the existing order instead of creating a new
+  one. A key reused for another venue returns `409 idempotency_conflict`.
+- `POST /api/orders/:id/send` returns the order when it is already at or beyond
+  `sent`; repeating a status transition returns the order when it is already in
+  that state.
+- The PWA generates one key per cart and rotates it whenever the cart changes,
+  so a network retry reuses the key while a genuinely new order gets a new one.
+
+**Consequences:** Order creation is safe to retry on flaky venue WiFi. The
+outbox worker can later reuse the same keys when replaying queued mutations.
+The unique index allows multiple `NULL` keys for older rows and imports.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

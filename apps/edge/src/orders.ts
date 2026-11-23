@@ -76,6 +76,25 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const venue = await resolveVenue(db, auth.tenantId, input.venue_id);
     if (!venue) return context.json({ error: "venue_not_found" }, 404);
 
+    if (input.idempotency_key) {
+      const existing = await db
+        .selectFrom("orders")
+        .select(["id", "venue_id"])
+        .where("tenant_id", "=", auth.tenantId)
+        .where("idempotency_key", "=", input.idempotency_key)
+        .executeTakeFirst();
+
+      if (existing) {
+        if (existing.venue_id !== venue.id) {
+          return context.json({ error: "idempotency_conflict" }, 409);
+        }
+        return context.json(
+          await loadOrder(db, auth.tenantId, existing.id),
+          200,
+        );
+      }
+    }
+
     let table = null;
     if (input.table_id) {
       table = await db
@@ -297,61 +316,81 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       }
     }
 
-    await db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto("orders")
-        .values({
-          id: orderId,
-          tenant_id: auth.tenantId,
-          venue_id: venue.id,
-          table_id: table?.id ?? null,
-          number,
-          status: "open",
-          subtotal_minor: totals.subtotalMinor,
-          tax_minor: totals.taxMinor,
-          total_minor: totals.totalMinor,
-          notes: input.notes ?? null,
-          opened_by: auth.userId,
-          created_at: now,
-          updated_at: now,
-          closed_at: null,
-        })
-        .execute();
-
-      await trx.insertInto("order_items").values(itemRows).execute();
-
-      if (modifierRows.length) {
+    try {
+      await db.transaction().execute(async (trx) => {
         await trx
-          .insertInto("order_item_modifiers")
-          .values(modifierRows)
-          .execute();
-      }
-
-      await trx
-        .insertInto("order_events")
-        .values({
-          id: newId(),
-          tenant_id: auth.tenantId,
-          order_id: orderId,
-          type: "opened",
-          data: JSON.stringify({
+          .insertInto("orders")
+          .values({
+            id: orderId,
+            tenant_id: auth.tenantId,
+            venue_id: venue.id,
             table_id: table?.id ?? null,
-            item_count: input.items.length,
-          }),
-          actor_user_id: auth.userId,
-          created_at: now,
-        })
-        .execute();
-
-      if (table) {
-        await trx
-          .updateTable("dining_tables")
-          .set({ status: "occupied" })
-          .where("id", "=", table.id)
-          .where("tenant_id", "=", auth.tenantId)
+            number,
+            status: "open",
+            subtotal_minor: totals.subtotalMinor,
+            tax_minor: totals.taxMinor,
+            total_minor: totals.totalMinor,
+            notes: input.notes ?? null,
+            idempotency_key: input.idempotency_key ?? null,
+            opened_by: auth.userId,
+            created_at: now,
+            updated_at: now,
+            closed_at: null,
+          })
           .execute();
+
+        await trx.insertInto("order_items").values(itemRows).execute();
+
+        if (modifierRows.length) {
+          await trx
+            .insertInto("order_item_modifiers")
+            .values(modifierRows)
+            .execute();
+        }
+
+        await trx
+          .insertInto("order_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            order_id: orderId,
+            type: "opened",
+            data: JSON.stringify({
+              table_id: table?.id ?? null,
+              item_count: input.items.length,
+            }),
+            actor_user_id: auth.userId,
+            created_at: now,
+          })
+          .execute();
+
+        if (table) {
+          await trx
+            .updateTable("dining_tables")
+            .set({ status: "occupied" })
+            .where("id", "=", table.id)
+            .where("tenant_id", "=", auth.tenantId)
+            .execute();
+        }
+      });
+    } catch (error) {
+      if (input.idempotency_key) {
+        const existing = await db
+          .selectFrom("orders")
+          .select(["id", "venue_id"])
+          .where("tenant_id", "=", auth.tenantId)
+          .where("idempotency_key", "=", input.idempotency_key)
+          .executeTakeFirst();
+
+        if (existing?.venue_id === venue.id) {
+          return context.json(
+            await loadOrder(db, auth.tenantId, existing.id),
+            200,
+          );
+        }
       }
-    });
+      throw error;
+    }
 
     return context.json(await loadOrder(db, auth.tenantId, orderId), 201);
   });
@@ -394,6 +433,10 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const auth = context.get("auth");
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
     if (!order) return context.json({ error: "order_not_found" }, 404);
+
+    if (["sent", "preparing", "ready", "served"].includes(order.status)) {
+      return context.json(order);
+    }
 
     try {
       assertTransition(order.status as OrderState, "sent");
@@ -453,6 +496,10 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
 
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
     if (!order) return context.json({ error: "order_not_found" }, 404);
+
+    if (order.status === next) {
+      return context.json(order);
+    }
 
     try {
       assertTransition(order.status as OrderState, next);

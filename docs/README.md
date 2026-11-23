@@ -48,6 +48,7 @@ Project is at **Phase 1 — Menu, tables and order taking** (with Phase 0b
 distribution tracked alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
-send-to-kitchen work end to end on the local edge. Next: order notes/courses,
-open tabs, optimistic UI, and outbox writes with idempotency keys. Payments
+send-to-kitchen work end to end on the local edge. Order mutations are
+idempotent. Next: order notes/courses, open tabs, optimistic UI, and outbox
+writes. Payments
 architecture covers cash, M-Pesa and PDQ. See `TASKS.md` for the live checklist.

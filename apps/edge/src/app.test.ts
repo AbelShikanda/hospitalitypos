@@ -545,6 +545,83 @@ describe("menu, floor and orders", () => {
     ).toMatchObject({ status: "free" });
   });
 
+  it("replays order creation and transitions safely with an idempotency key", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const payload = {
+      venue_id: fixture.venueId,
+      table_id: menu.tableId,
+      idempotency_key: "order-key-0001",
+      items: [
+        {
+          item_id: menu.itemId,
+          quantity: 1,
+          modifier_ids: [menu.modifierId],
+        },
+      ],
+    };
+
+    const first = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(first.status).toBe(201);
+    const firstOrder = (await first.json()) as { id: string };
+
+    const replay = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(replay.status).toBe(200);
+    const replayOrder = (await replay.json()) as { id: string };
+    expect(replayOrder.id).toBe(firstOrder.id);
+
+    const list = await app.request(
+      `/api/orders?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const orders = (await list.json()) as Array<{ id: string }>;
+    expect(orders).toHaveLength(1);
+
+    const sent = await app.request(`/api/orders/${firstOrder.id}/send`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(sent.status).toBe(200);
+
+    const sentAgain = await app.request(`/api/orders/${firstOrder.id}/send`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(sentAgain.status).toBe(200);
+
+    const preparing = await app.request(
+      `/api/orders/${firstOrder.id}/status`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ status: "preparing" }),
+      },
+    );
+    expect(preparing.status).toBe(200);
+
+    const preparingAgain = await app.request(
+      `/api/orders/${firstOrder.id}/status`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ status: "preparing" }),
+      },
+    );
+    expect(preparingAgain.status).toBe(200);
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

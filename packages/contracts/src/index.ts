@@ -241,6 +241,7 @@ export const createOrderSchema = z.object({
   venue_id: ulid,
   table_id: ulid.optional(),
   notes: z.string().max(500).optional(),
+  idempotency_key: z.string().min(8).max(128).optional(),
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 
@@ -285,6 +286,7 @@ export const orderSchema = z.object({
   tax_minor: z.number().int().nonnegative(),
   total_minor: z.number().int().nonnegative(),
   notes: z.string().nullable(),
+  idempotency_key: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   items: z.array(orderItemSchema),

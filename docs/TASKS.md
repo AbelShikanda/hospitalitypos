@@ -97,7 +97,8 @@ data survives an edge-node restart.
 - [ ] Order notes, courses, open tabs, move/merge tables.
 - [x] Local persistence on edge (SQLite) + restart survival.
 - [ ] Optimistic UI in PWA.
-- [ ] Outbox write on every mutation; idempotency keys.
+- [x] Idempotency keys on order creation and safe transition retries.
+- [ ] Outbox write on every mutation.
 - [x] Audit log for order events.
 
 ---
