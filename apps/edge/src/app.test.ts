@@ -67,6 +67,7 @@ async function addTenant(
 interface MenuFixture {
   categoryId: string;
   itemId: string;
+  starterItemId: string;
   groupId: string;
   modifierId: string;
   areaId: string;
@@ -77,6 +78,7 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
   const now = new Date().toISOString();
   const categoryId = newId();
   const itemId = newId();
+  const starterItemId = newId();
   const groupId = newId();
   const modifierId = newId();
   const areaId = newId();
@@ -102,8 +104,25 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
       description: null,
       price_minor: 95000,
       tax_rate: 16,
+      course: "main",
       is_available: 1,
       sort_order: 0,
+      created_at: now,
+    })
+    .execute();
+  await db
+    .insertInto("menu_items")
+    .values({
+      id: starterItemId,
+      tenant_id: fixture.tenantId,
+      category_id: categoryId,
+      name: "Samosa",
+      description: null,
+      price_minor: 25000,
+      tax_rate: 16,
+      course: "starter",
+      is_available: 1,
+      sort_order: 1,
       created_at: now,
     })
     .execute();
@@ -165,7 +184,15 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
     })
     .execute();
 
-  return { categoryId, itemId, groupId, modifierId, areaId, tableId };
+  return {
+    categoryId,
+    itemId,
+    starterItemId,
+    groupId,
+    modifierId,
+    areaId,
+    tableId,
+  };
 }
 
 function appFor(db: Db) {
@@ -362,6 +389,7 @@ describe("menu, floor and orders", () => {
           id: string;
           name: string;
           price_minor: number;
+          course: string;
           is_available: boolean;
           modifier_groups: Array<{
             modifiers: Array<{
@@ -379,6 +407,7 @@ describe("menu, floor and orders", () => {
       id: menu.itemId,
       name: "Nyama Choma",
       price_minor: 95000,
+      course: "main",
       is_available: true,
     });
     expect(
@@ -478,6 +507,7 @@ describe("menu, floor and orders", () => {
     expect(order.items[0]).toMatchObject({
       unit_price_minor: 95000,
       quantity: 2,
+      course: "main",
       line_total_minor: 230000,
     });
     expect(order.items[0]?.modifiers[0]).toMatchObject({
@@ -620,6 +650,65 @@ describe("menu, floor and orders", () => {
       },
     );
     expect(preparingAgain.status).toBe(200);
+  });
+
+  it("fires only the selected course and then the remaining items", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          { item_id: menu.starterItemId, quantity: 1 },
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as {
+      id: string;
+      items: Array<{ id: string; course: string; status: string }>;
+    };
+
+    const starter = await app.request(`/api/orders/${order.id}/send`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ course: "starter" }),
+    });
+    expect(starter.status).toBe(200);
+    const afterStarter = (await starter.json()) as {
+      status: string;
+      items: Array<{ course: string; status: string }>;
+    };
+    expect(afterStarter.status).toBe("sent");
+    expect(
+      afterStarter.items.find((item) => item.course === "starter")?.status,
+    ).toBe("sent");
+    expect(
+      afterStarter.items.find((item) => item.course === "main")?.status,
+    ).toBe("pending");
+
+    const main = await app.request(`/api/orders/${order.id}/send`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ course: "main" }),
+    });
+    expect(main.status).toBe(200);
+    const afterMain = (await main.json()) as {
+      items: Array<{ status: string }>;
+    };
+    expect(afterMain.items.every((item) => item.status === "sent")).toBe(true);
   });
 
   it("reopens a sent tab, appends a round and sends only new items", async () => {

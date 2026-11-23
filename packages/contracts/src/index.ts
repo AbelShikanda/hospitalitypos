@@ -160,6 +160,14 @@ export const sessionSchema = z.object({
   expires_at: z.string(),
 });
 
+export const courseSchema = z.enum([
+  "starter",
+  "main",
+  "dessert",
+  "drink",
+  "other",
+]);
+
 export const menuModifierSchema = z.object({
   id: ulid,
   name: z.string().min(1),
@@ -181,6 +189,7 @@ export const menuItemSchema = z.object({
   description: z.string().nullable(),
   price_minor: z.number().int().nonnegative(),
   tax_rate: z.number().int().nonnegative(),
+  course: courseSchema,
   is_available: z.boolean(),
   modifier_groups: z.array(menuModifierGroupSchema),
 });
@@ -221,6 +230,7 @@ export const createMenuItemSchema = z.object({
   description: z.string().max(500).optional(),
   price_minor: z.number().int().positive(),
   tax_rate: z.number().int().min(0).max(100).default(16),
+  course: courseSchema.default("main"),
   is_available: z.boolean().default(true),
 });
 
@@ -251,6 +261,10 @@ export const addOrderItemsSchema = z.object({
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 
+export const sendOrderSchema = z.object({
+  course: courseSchema.optional(),
+});
+
 export const orderStatusSchema = z.enum([
   "open",
   "sent",
@@ -268,6 +282,7 @@ export const orderItemSchema = z.object({
   unit_price_minor: z.number().int().nonnegative(),
   quantity: z.number().int().positive(),
   tax_rate: z.number().int().nonnegative(),
+  course: courseSchema,
   line_total_minor: z.number().int().nonnegative(),
   notes: z.string().nullable(),
   status: z.string(),
@@ -320,6 +335,8 @@ export type CreateTable = z.infer<typeof createTableSchema>;
 export type CreateOrderItem = z.infer<typeof createOrderItemSchema>;
 export type CreateOrder = z.infer<typeof createOrderSchema>;
 export type AddOrderItems = z.infer<typeof addOrderItemsSchema>;
+export type SendOrder = z.infer<typeof sendOrderSchema>;
+export type Course = z.infer<typeof courseSchema>;
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 export type OrderItem = z.infer<typeof orderItemSchema>;
 export type Order = z.infer<typeof orderSchema>;

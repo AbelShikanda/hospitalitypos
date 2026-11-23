@@ -397,12 +397,36 @@ const orderEventIdempotency: Migration = {
   },
 };
 
+const orderCourses: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .alterTable("menu_items")
+      .addColumn("course", "varchar(20)", (column) =>
+        column.notNull().defaultTo("main"),
+      )
+      .execute();
+
+    await db.schema
+      .alterTable("order_items")
+      .addColumn("course", "varchar(20)", (column) =>
+        column.notNull().defaultTo("main"),
+      )
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.alterTable("order_items").dropColumn("course").execute();
+    await db.schema.alterTable("menu_items").dropColumn("course").execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
   "003_menu_floor_orders": menuFloorOrders,
   "004_order_idempotency": orderIdempotency,
   "005_order_event_idempotency": orderEventIdempotency,
+  "006_order_courses": orderCourses,
 };
 
 export const migrationProvider: MigrationProvider = {

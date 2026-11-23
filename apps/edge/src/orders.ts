@@ -2,6 +2,7 @@ import {
   addOrderItemsSchema,
   createOrderSchema,
   orderStatusSchema,
+  sendOrderSchema,
   type CreateOrderItem,
 } from "@hpos/contracts";
 import type { Db } from "@hpos/db";
@@ -53,6 +54,7 @@ async function loadOrder(db: Db, tenantId: string, orderId: string) {
       unit_price_minor: item.unit_price_minor,
       quantity: item.quantity,
       tax_rate: item.tax_rate,
+      course: item.course,
       line_total_minor: item.line_total_minor,
       notes: item.notes,
       status: item.status,
@@ -74,6 +76,7 @@ interface PricedLine {
     name: string;
     price_minor: number;
     tax_rate: number;
+    course: string;
   };
   quantity: number;
   notes: string | null;
@@ -236,6 +239,7 @@ function buildItemRows(
     unit_price_minor: number;
     quantity: number;
     tax_rate: number;
+    course: string;
     line_total_minor: number;
     notes: string | null;
     status: string;
@@ -261,6 +265,7 @@ function buildItemRows(
       unit_price_minor: line.unitPriceMinor,
       quantity: line.quantity,
       tax_rate: line.item.tax_rate,
+      course: line.item.course,
       line_total_minor: line.lineTotalMinor,
       notes: line.notes,
       status: "pending",
@@ -607,6 +612,13 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
   });
 
   app.post("/api/orders/:id/send", requireAuth(db), async (context) => {
+    const rawBody = await context.req.json().catch(() => null);
+    const parsed = sendOrderSchema.safeParse(rawBody ?? {});
+    if (!parsed.success) {
+      return context.json({ error: "invalid_input" }, 400);
+    }
+    const course = parsed.data.course;
+
     const auth = context.get("auth");
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
     if (!order) return context.json({ error: "order_not_found" }, 404);
@@ -615,15 +627,19 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const alreadySent = ["sent", "preparing", "ready", "served"].includes(
       order.status,
     );
-    const pendingItems = order.items.filter((item) => item.status === "pending");
+    const pendingItems = order.items.filter(
+      (item) =>
+        item.status === "pending" && (!course || item.course === course),
+    );
 
     if (!isOpen && !alreadySent) {
       return context.json({ error: "invalid_transition" }, 409);
     }
-    if (alreadySent && pendingItems.length === 0) {
+    if (pendingItems.length === 0) {
       return context.json(order);
     }
 
+    const pendingIds = pendingItems.map((item) => item.id);
     const now = new Date().toISOString();
     await db.transaction().execute(async (trx) => {
       await trx
@@ -639,9 +655,8 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       await trx
         .updateTable("order_items")
         .set({ status: "sent" })
-        .where("order_id", "=", order.id)
+        .where("id", "in", pendingIds)
         .where("tenant_id", "=", auth.tenantId)
-        .where("status", "=", "pending")
         .execute();
 
       await trx
@@ -653,6 +668,7 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
           type: "sent",
           data: JSON.stringify({
             from: order.status,
+            course: course ?? null,
             item_count: pendingItems.length,
           }),
           idempotency_key: null,

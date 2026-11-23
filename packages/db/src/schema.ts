@@ -58,6 +58,7 @@ export interface MenuItemsTable {
   description: string | null;
   price_minor: number;
   tax_rate: number;
+  course: string;
   is_available: number;
   sort_order: number;
   created_at: Timestamp;
@@ -146,6 +147,7 @@ export interface OrderItemsTable {
   unit_price_minor: number;
   quantity: number;
   tax_rate: number;
+  course: string;
   line_total_minor: number;
   notes: string | null;
   status: string;

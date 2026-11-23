@@ -12,34 +12,91 @@ const DEMO_STAFF = [
   { name: "Demo Waiter", role: "waiter" },
 ] as const;
 
-const DEMO_CATEGORIES = ["Starters", "Mains", "Drinks"] as const;
+const DEMO_CATEGORIES = [
+  "Starters",
+  "Mains",
+  "Desserts",
+  "Drinks",
+] as const;
 
 const DEMO_ITEMS = [
-  { key: "samosa", category: "Starters", name: "Beef Samosa", price: 25000 },
+  {
+    key: "samosa",
+    category: "Starters",
+    course: "starter",
+    name: "Beef Samosa",
+    price: 25000,
+  },
   {
     key: "wings",
     category: "Starters",
+    course: "starter",
     name: "Chicken Wings",
     price: 55000,
   },
   {
     key: "spring-rolls",
     category: "Starters",
+    course: "starter",
     name: "Veg Spring Rolls",
     price: 35000,
   },
-  { key: "nyama", category: "Mains", name: "Nyama Choma", price: 95000 },
-  { key: "biryani", category: "Mains", name: "Chicken Biryani", price: 75000 },
-  { key: "tilapia", category: "Mains", name: "Grilled Tilapia", price: 110000 },
+  {
+    key: "nyama",
+    category: "Mains",
+    course: "main",
+    name: "Nyama Choma",
+    price: 95000,
+  },
+  {
+    key: "biryani",
+    category: "Mains",
+    course: "main",
+    name: "Chicken Biryani",
+    price: 75000,
+  },
+  {
+    key: "tilapia",
+    category: "Mains",
+    course: "main",
+    name: "Grilled Tilapia",
+    price: 110000,
+  },
   {
     key: "ugali",
     category: "Mains",
+    course: "main",
     name: "Ugali & Sukuma",
     price: 35000,
   },
-  { key: "soda", category: "Drinks", name: "Soda", price: 15000 },
-  { key: "dawa", category: "Drinks", name: "Dawa", price: 45000 },
-  { key: "water", category: "Drinks", name: "Water", price: 10000 },
+  {
+    key: "cake",
+    category: "Desserts",
+    course: "dessert",
+    name: "Chocolate Cake",
+    price: 35000,
+  },
+  {
+    key: "soda",
+    category: "Drinks",
+    course: "drink",
+    name: "Soda",
+    price: 15000,
+  },
+  {
+    key: "dawa",
+    category: "Drinks",
+    course: "drink",
+    name: "Dawa",
+    price: 45000,
+  },
+  {
+    key: "water",
+    category: "Drinks",
+    course: "drink",
+    name: "Water",
+    price: 10000,
+  },
 ] as const;
 
 const DEMO_TABLES = [
@@ -121,6 +178,7 @@ async function seedMenuAndFloor(
         description: null,
         price_minor: item.price,
         tax_rate: 16,
+        course: item.course,
         is_available: 1,
         sort_order: index,
         created_at: now,

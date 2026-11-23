@@ -85,6 +85,7 @@ export function registerMenuRoutes(app: Hono<AppEnv>, db: Db) {
         description: string | null;
         price_minor: number;
         tax_rate: number;
+        course: string;
         is_available: boolean;
         modifier_groups: Array<{
           id: string;
@@ -131,6 +132,7 @@ export function registerMenuRoutes(app: Hono<AppEnv>, db: Db) {
         description: item.description,
         price_minor: priceByItem.get(item.id) ?? item.price_minor,
         tax_rate: item.tax_rate,
+        course: item.course,
         is_available: item.is_available === 1,
         modifier_groups: itemGroups,
       });
@@ -176,6 +178,7 @@ export function registerMenuRoutes(app: Hono<AppEnv>, db: Db) {
         description: parsed.data.description ?? null,
         price_minor: parsed.data.price_minor,
         tax_rate: parsed.data.tax_rate,
+        course: parsed.data.course,
         is_available: parsed.data.is_available ? 1 : 0,
         sort_order: 0,
         created_at: new Date().toISOString(),

@@ -5,6 +5,24 @@ import "./styles.css";
 
 type Role = "owner" | "manager" | "cashier" | "waiter" | "kitchen";
 
+type Course = "starter" | "main" | "dessert" | "drink" | "other";
+
+const COURSE_LABELS: Record<Course, string> = {
+  starter: "Starter",
+  main: "Main",
+  dessert: "Dessert",
+  drink: "Drink",
+  other: "Other",
+};
+
+const COURSE_ORDER: Course[] = [
+  "starter",
+  "main",
+  "dessert",
+  "drink",
+  "other",
+];
+
 type Staff = { id: string; name: string; role: Role };
 type Venue = {
   id: string;
@@ -51,6 +69,7 @@ type MenuItem = {
   description: string | null;
   price_minor: number;
   tax_rate: number;
+  course: Course;
   is_available: boolean;
   modifier_groups: ModifierGroup[];
 };
@@ -111,6 +130,7 @@ type Order = {
     unit_price_minor: number;
     quantity: number;
     tax_rate: number;
+    course: "starter" | "main" | "dessert" | "drink" | "other";
     line_total_minor: number;
     notes: string | null;
     status: string;
@@ -547,6 +567,7 @@ function OrderBuilder({
   const [categoryId, setCategoryId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [notes, setNotes] = useState("");
+  const [courseToSend, setCourseToSend] = useState<Course | "all">("all");
   const [pending, setPending] = useState<MenuItem | null>(null);
   const [existingOrder, setExistingOrder] = useState<Order | null>(null);
   const [error, setError] = useState("");
@@ -614,6 +635,17 @@ function OrderBuilder({
   const category = menu?.categories.find((entry) => entry.id === categoryId);
   const totals = useMemo(() => cartTotals(cart), [cart]);
   const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const pendingCourses = useMemo(() => {
+    const courses = new Set<Course>(cart.map((line) => line.item.course));
+    for (const item of existingOrder?.items ?? []) {
+      if (item.status === "pending") courses.add(item.course);
+    }
+    return COURSE_ORDER.filter((course) => courses.has(course));
+  }, [cart, existingOrder]);
+  const selectedCourse: Course | "all" =
+    courseToSend === "all" || pendingCourses.includes(courseToSend)
+      ? courseToSend
+      : "all";
 
   function addLine(item: MenuItem, modifiers: Modifier[]) {
     const key = `${item.id}:${modifiers
@@ -706,6 +738,10 @@ function OrderBuilder({
         const sent = await fetch(`/api/orders/${order.id}/send`, {
           method: "POST",
           credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            selectedCourse === "all" ? {} : { course: selectedCourse },
+          ),
         });
         if (!sent.ok) {
           setError("Order saved but could not be sent to the kitchen.");
@@ -775,6 +811,9 @@ function OrderBuilder({
                     <span className="menu-item-price">
                       {money(item.price_minor)}
                     </span>
+                    <span className="menu-item-course">
+                      {COURSE_LABELS[item.course]}
+                    </span>
                     {!item.is_available ? (
                       <span className="menu-item-off">Unavailable</span>
                     ) : item.modifier_groups.length ? (
@@ -824,6 +863,7 @@ function OrderBuilder({
                       <strong>
                         {item.quantity}× {item.name}
                       </strong>
+                      <small>{COURSE_LABELS[item.course]}</small>
                       {item.modifiers.length ? (
                         <small>
                           {item.modifiers
@@ -899,6 +939,25 @@ function OrderBuilder({
               onChange={(event) => setNotes(event.target.value)}
             />
           </label>
+
+          {pendingCourses.length ? (
+            <label className="course-field">
+              <span>Fire course</span>
+              <select
+                value={selectedCourse}
+                onChange={(event) =>
+                  setCourseToSend(event.target.value as Course | "all")
+                }
+              >
+                <option value="all">All pending</option>
+                {pendingCourses.map((course) => (
+                  <option key={course} value={course}>
+                    {COURSE_LABELS[course]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <div className="cart-summary">
             {existingOrder ? (

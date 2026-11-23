@@ -799,6 +799,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.menu-item-course {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .menu-item-options,
 .menu-item-off {
   font-size: 11px;
@@ -873,6 +880,29 @@
 .note-field textarea {
   width: 100%;
   resize: vertical;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.course-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.course-field select {
+  width: 100%;
   padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);

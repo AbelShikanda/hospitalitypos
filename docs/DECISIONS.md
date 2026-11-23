@@ -626,6 +626,30 @@ items per station without reprinting earlier rounds.
 
 ---
 
+## ADR-023 — Courses are item metadata used for firing
+
+**Status:** Accepted
+
+**Context:** Restaurants and bars fire starters before mains and send drinks
+separately. The kitchen needs round-level control without splitting the tab.
+
+**Decision:**
+
+- Each menu item has a `course` (`starter`, `main`, `dessert`, `drink`,
+  `other`), defaulting to `main`. Order items snapshot it at sale time.
+- `POST /api/orders/:id/send` accepts an optional `course`. With a course, only
+  pending items of that course are fired; without one, all pending items fire.
+- The order state transitions to `sent` on the first firing and keeps its later
+  state when additional courses are fired.
+- The PWA labels menu and cart items by course and exposes a “Fire course”
+  selector.
+
+**Consequences:** Kitchen rounds can be staged from one tab. Item status remains
+the source of truth for what has been fired; course is immutable on the order
+line so later menu edits do not reshuffle existing tickets.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/
