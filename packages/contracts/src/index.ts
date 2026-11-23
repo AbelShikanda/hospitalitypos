@@ -245,6 +245,11 @@ export const createOrderSchema = z.object({
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 
+export const addOrderItemsSchema = z.object({
+  idempotency_key: z.string().min(8).max(128).optional(),
+  items: z.array(createOrderItemSchema).min(1).max(100),
+});
+
 export const orderStatusSchema = z.enum([
   "open",
   "sent",
@@ -313,6 +318,7 @@ export type CreateMenuItem = z.infer<typeof createMenuItemSchema>;
 export type CreateTable = z.infer<typeof createTableSchema>;
 export type CreateOrderItem = z.infer<typeof createOrderItemSchema>;
 export type CreateOrder = z.infer<typeof createOrderSchema>;
+export type AddOrderItems = z.infer<typeof addOrderItemsSchema>;
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 export type OrderItem = z.infer<typeof orderItemSchema>;
 export type Order = z.infer<typeof orderSchema>;

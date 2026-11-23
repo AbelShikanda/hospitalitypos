@@ -600,6 +600,32 @@ The unique index allows multiple `NULL` keys for older rows and imports.
 
 ---
 
+## ADR-022 — Open tabs append rounds; item status drives firing
+
+**Status:** Accepted
+
+**Context:** A table stays open across several rounds. Waiters need to reopen an
+occupied table, add drinks or dessert, and fire only the new items without
+resending food that is already in the kitchen.
+
+**Decision:**
+
+- `POST /api/orders/:id/items` appends a round to any non-closed, non-voided
+  order. New lines start as `pending`.
+- `POST /api/orders/:id/send` fires only `pending` items. From `open` it also
+  moves the order to `sent`; from a later state it keeps the order state so a
+  kitchen progress state is not regressed.
+- Appends carry an optional idempotency key stored on the `items_added` event,
+  unique per tenant. Replaying the same append returns the existing order.
+- The PWA reopens a tab from the floor or the open-orders list, shows the
+  existing bill read-only, and treats the cart as the next round.
+
+**Consequences:** Item-level status is the source of truth for kitchen rounds;
+order-level status is the overall tab state. KDS routing can consume pending
+items per station without reprinting earlier rounds.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

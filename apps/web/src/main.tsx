@@ -105,9 +105,14 @@ type Order = {
   table_id: string | null;
   items: Array<{
     id: string;
+    item_id: string;
     name: string;
+    unit_price_minor: number;
     quantity: number;
+    tax_rate: number;
     line_total_minor: number;
+    notes: string | null;
+    status: string;
     modifiers: Array<{ name: string }>;
   }>;
 };
@@ -208,6 +213,8 @@ function errorText(code: unknown): string {
       return "The menu changed. Refresh and try again.";
     case "idempotency_conflict":
       return "This order was already saved elsewhere. Refresh the floor.";
+    case "order_closed":
+      return "That tab is already closed.";
     default:
       return "Could not save the order. Try again.";
   }
@@ -525,11 +532,13 @@ function ModifierDialog({
 function OrderBuilder({
   table,
   venueId,
+  existingOrderId,
   onClose,
   onDone,
 }: {
   table: FloorTable;
   venueId: string;
+  existingOrderId?: string;
   onClose: () => void;
   onDone: (order: Order, mode: "save" | "send") => void;
 }) {
@@ -537,6 +546,7 @@ function OrderBuilder({
   const [categoryId, setCategoryId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [pending, setPending] = useState<MenuItem | null>(null);
+  const [existingOrder, setExistingOrder] = useState<Order | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<"save" | "send" | null>(null);
@@ -545,6 +555,34 @@ function OrderBuilder({
   useEffect(() => {
     idempotencyKey.current = crypto.randomUUID();
   }, [cart]);
+
+  useEffect(() => {
+    const orderId = existingOrderId;
+    if (!orderId) {
+      setExistingOrder(null);
+      return;
+    }
+
+    const orderUrl = `/api/orders/${encodeURIComponent(orderId)}`;
+    let cancelled = false;
+    async function loadOrder() {
+      try {
+        const response = await fetch(orderUrl, {
+          credentials: "same-origin",
+        });
+        if (!response.ok) throw new Error("order failed");
+        const data = (await response.json()) as Order;
+        if (!cancelled) setExistingOrder(data);
+      } catch {
+        if (!cancelled) setError("Could not load the open tab.");
+      }
+    }
+
+    void loadOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [existingOrderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -620,21 +658,33 @@ function OrderBuilder({
     setSubmitting(mode);
     setError("");
     try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          venue_id: venueId,
-          table_id: table.id,
-          idempotency_key: idempotencyKey.current,
-          items: cart.map((line) => ({
-            item_id: line.item.id,
-            quantity: line.quantity,
-            modifier_ids: line.modifiers.map((modifier) => modifier.id),
-          })),
-        }),
-      });
+      const items = cart.map((line) => ({
+        item_id: line.item.id,
+        quantity: line.quantity,
+        modifier_ids: line.modifiers.map((modifier) => modifier.id),
+      }));
+
+      const response = existingOrder
+        ? await fetch(`/api/orders/${existingOrder.id}/items`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              idempotency_key: idempotencyKey.current,
+              items,
+            }),
+          })
+        : await fetch("/api/orders", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              venue_id: venueId,
+              table_id: table.id,
+              idempotency_key: idempotencyKey.current,
+              items,
+            }),
+          });
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
@@ -644,7 +694,9 @@ function OrderBuilder({
         return;
       }
 
-      const order = (await response.json()) as Order;
+      let order = (await response.json()) as Order;
+
+      if (existingOrder) setExistingOrder(order);
 
       if (mode === "send") {
         const sent = await fetch(`/api/orders/${order.id}/send`, {
@@ -655,6 +707,7 @@ function OrderBuilder({
           setError("Order saved but could not be sent to the kitchen.");
           return;
         }
+        order = (await sent.json()) as Order;
       }
 
       onDone(order, mode);
@@ -672,9 +725,14 @@ function OrderBuilder({
           ← Back to floor
         </button>
         <div>
-          <span className="eyebrow">New order</span>
+          <span className="eyebrow">
+            {existingOrder ? "Open tab" : "New order"}
+          </span>
           <h1>
-            {table.name} <small>{table.seats} seats</small>
+            {table.name}{" "}
+            <small>
+              {existingOrder ? existingOrder.number : `${table.seats} seats`}
+            </small>
           </h1>
         </div>
         <span className="pill">
@@ -728,7 +786,9 @@ function OrderBuilder({
         <aside className="cart-panel">
           <header className="cart-head">
             <div>
-              <span className="eyebrow">Order</span>
+              <span className="eyebrow">
+                {existingOrder ? "New items" : "Order"}
+              </span>
               <h2>
                 {itemCount} item{itemCount === 1 ? "" : "s"}
               </h2>
@@ -743,6 +803,37 @@ function OrderBuilder({
               </button>
             ) : null}
           </header>
+
+          {existingOrder ? (
+            <div className="existing-order">
+              <div className="cart-section-label">
+                <span>Already ordered</span>
+                <strong>{existingOrder.number}</strong>
+              </div>
+              <div className="cart-list cart-list--locked">
+                {existingOrder.items.map((item) => (
+                  <div className="cart-line cart-line--locked" key={item.id}>
+                    <div className="cart-line-info">
+                      <strong>
+                        {item.quantity}× {item.name}
+                      </strong>
+                      {item.modifiers.length ? (
+                        <small>
+                          {item.modifiers
+                            .map((modifier) => modifier.name)
+                            .join(" · ")}
+                        </small>
+                      ) : null}
+                      {item.notes ? <small>{item.notes}</small> : null}
+                    </div>
+                    <span className="cart-line-total">
+                      {money(item.line_total_minor)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="cart-list">
             {cart.length === 0 ? (
@@ -792,18 +883,39 @@ function OrderBuilder({
           </div>
 
           <div className="cart-summary">
-            <div>
-              <span>Subtotal</span>
-              <span>{money(totals.subtotalMinor)}</span>
-            </div>
-            <div>
-              <span>VAT</span>
-              <span>{money(totals.taxMinor)}</span>
-            </div>
-            <div className="cart-total">
-              <span>Total</span>
-              <strong>{money(totals.totalMinor)}</strong>
-            </div>
+            {existingOrder ? (
+              <>
+                <div>
+                  <span>Existing bill</span>
+                  <span>{money(existingOrder.total_minor)}</span>
+                </div>
+                <div>
+                  <span>New items</span>
+                  <span>{money(totals.totalMinor)}</span>
+                </div>
+                <div className="cart-total">
+                  <span>Total after save</span>
+                  <strong>
+                    {money(existingOrder.total_minor + totals.totalMinor)}
+                  </strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span>Subtotal</span>
+                  <span>{money(totals.subtotalMinor)}</span>
+                </div>
+                <div>
+                  <span>VAT</span>
+                  <span>{money(totals.taxMinor)}</span>
+                </div>
+                <div className="cart-total">
+                  <span>Total</span>
+                  <strong>{money(totals.totalMinor)}</strong>
+                </div>
+              </>
+            )}
           </div>
 
           {error ? <p className="login-error">{error}</p> : null}
@@ -815,7 +927,11 @@ function OrderBuilder({
               disabled={submitting !== null || !cart.length}
               onClick={() => void submit("save")}
             >
-              {submitting === "save" ? "Saving…" : "Save order"}
+              {submitting === "save"
+                ? "Saving…"
+                : existingOrder
+                  ? "Save items"
+                  : "Save order"}
             </button>
             <button
               className="btn-primary"
@@ -823,7 +939,11 @@ function OrderBuilder({
               disabled={submitting !== null || !cart.length}
               onClick={() => void submit("send")}
             >
-              {submitting === "send" ? "Sending…" : "Send to kitchen"}
+              {submitting === "send"
+                ? "Sending…"
+                : existingOrder
+                  ? "Send new items"
+                  : "Send to kitchen"}
             </button>
           </div>
         </aside>
@@ -846,7 +966,10 @@ function OrderBuilder({
 function TablesView({ venueId }: { venueId: string }) {
   const [floor, setFloor] = useState<Floor | null>(null);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
-  const [selected, setSelected] = useState<FloorTable | null>(null);
+  const [selected, setSelected] = useState<{
+    table: FloorTable;
+    orderId?: string;
+  } | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -883,8 +1006,9 @@ function TablesView({ venueId }: { venueId: string }) {
   if (selected) {
     return (
       <OrderBuilder
-        table={selected}
+        table={selected.table}
         venueId={venueId}
+        existingOrderId={selected.orderId}
         onClose={() => setSelected(null)}
         onDone={(order, mode) => {
           setSelected(null);
@@ -908,6 +1032,15 @@ function TablesView({ venueId }: { venueId: string }) {
     (order) => order.status !== "closed" && order.status !== "voided",
   );
 
+  function openOrder(order: OrderSummary) {
+    const table = allTables.find((entry) => entry.id === order.table_id);
+    if (!table) {
+      setNotice("This order has no table to reopen.");
+      return;
+    }
+    setSelected({ table, orderId: order.id });
+  }
+
   return (
     <div className="workspace">
       <header className="workspace-head">
@@ -915,8 +1048,8 @@ function TablesView({ venueId }: { venueId: string }) {
           <span className="eyebrow">Floor</span>
           <h1>Tables</h1>
           <p className="muted">
-            Tap a free table to start an order. Occupied tables show their open
-            bill.
+            Tap a free table to start an order, or an occupied table to reopen
+            its tab.
           </p>
         </div>
         <div className="workspace-stats">
@@ -969,14 +1102,14 @@ function TablesView({ venueId }: { venueId: string }) {
                     className={`table-card table-card--${table.status}`}
                     onClick={() => {
                       if (table.status === "occupied") {
-                        setNotice(
-                          order
-                            ? `${order.number} · ${money(order.total_minor)} · ${order.status}`
-                            : "This table has an open order.",
-                        );
+                        if (order) {
+                          setSelected({ table, orderId: order.id });
+                        } else {
+                          setNotice("This table has an open order.");
+                        }
                         return;
                       }
-                      setSelected(table);
+                      setSelected({ table });
                     }}
                   >
                     <span className="table-name">{table.name}</span>
@@ -1009,7 +1142,12 @@ function TablesView({ venueId }: { venueId: string }) {
         ) : (
           <div className="order-list">
             {activeOrders.map((order) => (
-              <div className="order-row" key={order.id}>
+              <button
+                className="order-row order-row--button"
+                key={order.id}
+                type="button"
+                onClick={() => openOrder(order)}
+              >
                 <span>
                   <strong>{order.number}</strong>
                   <small>
@@ -1017,7 +1155,7 @@ function TablesView({ venueId }: { venueId: string }) {
                   </small>
                 </span>
                 <strong>{money(order.total_minor)}</strong>
-              </div>
+              </button>
             ))}
           </div>
         )}

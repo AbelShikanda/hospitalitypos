@@ -63,7 +63,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 4, build }),
+    context.json({ app: version, edge: version, schema: 5, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {

@@ -369,11 +369,40 @@ const orderIdempotency: Migration = {
   },
 };
 
+const orderEventIdempotency: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .alterTable("order_events")
+      .addColumn("idempotency_key", "varchar(128)")
+      .execute();
+
+    await db.schema
+      .createIndex("order_events_tenant_idempotency_uidx")
+      .ifNotExists()
+      .on("order_events")
+      .columns(["tenant_id", "idempotency_key"])
+      .unique()
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema
+      .dropIndex("order_events_tenant_idempotency_uidx")
+      .ifExists()
+      .execute();
+    await db.schema
+      .alterTable("order_events")
+      .dropColumn("idempotency_key")
+      .execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
   "003_menu_floor_orders": menuFloorOrders,
   "004_order_idempotency": orderIdempotency,
+  "005_order_event_idempotency": orderEventIdempotency,
 };
 
 export const migrationProvider: MigrationProvider = {

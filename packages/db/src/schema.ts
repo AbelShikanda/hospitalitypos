@@ -167,6 +167,7 @@ export interface OrderEventsTable {
   order_id: string;
   type: string;
   data: string;
+  idempotency_key: string | null;
   actor_user_id: string | null;
   created_at: Timestamp;
 }

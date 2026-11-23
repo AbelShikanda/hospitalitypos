@@ -622,6 +622,95 @@ describe("menu, floor and orders", () => {
     expect(preparingAgain.status).toBe(200);
   });
 
+  it("reopens a sent tab, appends a round and sends only new items", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 2,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const sent = await app.request(`/api/orders/${order.id}/send`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(sent.status).toBe(200);
+
+    const appendPayload = {
+      idempotency_key: "append-key-0001",
+      items: [
+        {
+          item_id: menu.itemId,
+          quantity: 1,
+          modifier_ids: [menu.modifierId],
+        },
+      ],
+    };
+
+    const appended = await app.request(`/api/orders/${order.id}/items`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(appendPayload),
+    });
+    expect(appended.status).toBe(201);
+
+    const appendedOrder = (await appended.json()) as {
+      status: string;
+      subtotal_minor: number;
+      tax_minor: number;
+      total_minor: number;
+      items: Array<{ status: string }>;
+    };
+    expect(appendedOrder).toMatchObject({
+      status: "sent",
+      subtotal_minor: 297414,
+      tax_minor: 47586,
+      total_minor: 345000,
+    });
+    expect(appendedOrder.items.map((item) => item.status)).toEqual([
+      "sent",
+      "pending",
+    ]);
+
+    const replay = await app.request(`/api/orders/${order.id}/items`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(appendPayload),
+    });
+    expect(replay.status).toBe(200);
+    const replayOrder = (await replay.json()) as { items: Array<unknown> };
+    expect(replayOrder.items).toHaveLength(2);
+
+    const sentRound = await app.request(`/api/orders/${order.id}/send`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(sentRound.status).toBe(200);
+    const sentOrder = (await sentRound.json()) as {
+      status: string;
+      items: Array<{ status: string }>;
+    };
+    expect(sentOrder.status).toBe("sent");
+    expect(sentOrder.items.every((item) => item.status === "sent")).toBe(true);
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");
