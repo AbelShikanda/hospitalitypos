@@ -564,6 +564,46 @@ const paymentCredentials: Migration = {
   },
 };
 
+const stations: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("stations")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("name", "varchar(120)", (column) => column.notNull())
+      .addColumn("type", "varchar(20)", (column) =>
+        column.notNull().defaultTo("kitchen"),
+      )
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .alterTable("menu_items")
+      .addColumn("station_id", "char(26)")
+      .execute();
+
+    await db.schema
+      .alterTable("order_items")
+      .addColumn("station_id", "char(26)")
+      .execute();
+
+    await db.schema
+      .createIndex("stations_tenant_venue_idx")
+      .ifNotExists()
+      .on("stations")
+      .columns(["tenant_id", "venue_id"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.alterTable("order_items").dropColumn("station_id").execute();
+    await db.schema.alterTable("menu_items").dropColumn("station_id").execute();
+    await db.schema.dropTable("stations").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -574,6 +614,7 @@ const migrations: Record<string, Migration> = {
   "007_print_jobs": printJobs,
   "008_payments": payments,
   "009_payment_credentials": paymentCredentials,
+  "010_stations": stations,
 };
 
 export const migrationProvider: MigrationProvider = {

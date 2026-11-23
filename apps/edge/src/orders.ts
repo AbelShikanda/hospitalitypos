@@ -18,6 +18,7 @@ import {
 import type { Hono } from "hono";
 import { requireAuth, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
+import { publishEvent } from "./events.js";
 
 export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   const order = await db
@@ -57,6 +58,7 @@ export async function loadOrder(db: Db, tenantId: string, orderId: string) {
       quantity: item.quantity,
       tax_rate: item.tax_rate,
       course: item.course,
+      station_id: item.station_id,
       line_total_minor: item.line_total_minor,
       notes: item.notes,
       status: item.status,
@@ -72,6 +74,19 @@ export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   };
 }
 
+function emitOrderEvent(
+  type: string,
+  order: { id: string; venue_id: string; items: Array<{ station_id: string | null }> },
+): void {
+  publishEvent({
+    type,
+    venueId: order.venue_id,
+    stationIds: order.items.map((item) => item.station_id),
+    orderId: order.id,
+    at: new Date().toISOString(),
+  });
+}
+
 interface PricedLine {
   item: {
     id: string;
@@ -79,6 +94,7 @@ interface PricedLine {
     price_minor: number;
     tax_rate: number;
     course: string;
+    station_id: string | null;
   };
   quantity: number;
   notes: string | null;
@@ -242,6 +258,7 @@ function buildItemRows(
     quantity: number;
     tax_rate: number;
     course: string;
+    station_id: string | null;
     line_total_minor: number;
     notes: string | null;
     status: string;
@@ -271,6 +288,7 @@ function buildItemRows(
       quantity: line.quantity,
       tax_rate: line.item.tax_rate,
       course: line.item.course,
+      station_id: line.item.station_id,
       line_total_minor: line.lineTotalMinor,
       notes: line.notes,
       status: "pending",
@@ -505,7 +523,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       throw error;
     }
 
-    return context.json(await loadOrder(db, auth.tenantId, orderId), 201);
+    const result = await loadOrder(db, auth.tenantId, orderId);
+    if (result) emitOrderEvent("order_created", result);
+    return context.json(result, 201);
   });
 
   app.post("/api/orders/:id/items", requireAuth(db), async (context) => {
@@ -684,7 +704,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       throw error;
     }
 
-    return context.json(await loadOrder(db, auth.tenantId, order.id), 201);
+    const result = await loadOrder(db, auth.tenantId, order.id);
+    if (result) emitOrderEvent("items_added", result);
+    return context.json(result, 201);
   });
 
   app.get("/api/orders", requireAuth(db), async (context) => {
@@ -788,7 +810,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
         .execute();
     });
 
-    return context.json(await loadOrder(db, auth.tenantId, order.id));
+    const result = await loadOrder(db, auth.tenantId, order.id);
+    if (result) emitOrderEvent("order_sent", result);
+    return context.json(result);
   });
 
   app.post("/api/orders/:id/move", requireAuth(db), async (context) => {
@@ -907,7 +931,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       throw error;
     }
 
-    return context.json(await loadOrder(db, auth.tenantId, order.id));
+    const result = await loadOrder(db, auth.tenantId, order.id);
+    if (result) emitOrderEvent("table_moved", result);
+    return context.json(result);
   });
 
   app.post("/api/orders/:id/merge", requireAuth(db), async (context) => {
@@ -1064,7 +1090,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       throw error;
     }
 
-    return context.json(await loadOrder(db, auth.tenantId, target.id));
+    const result = await loadOrder(db, auth.tenantId, target.id);
+    if (result) emitOrderEvent("tables_merged", result);
+    return context.json(result);
   });
 
   app.post("/api/orders/:id/status", requireAuth(db), async (context) => {
@@ -1143,6 +1171,8 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
         .execute();
     });
 
-    return context.json(await loadOrder(db, auth.tenantId, order.id));
+    const result = await loadOrder(db, auth.tenantId, order.id);
+    if (result) emitOrderEvent(`order_${next}`, result);
+    return context.json(result);
   });
 }

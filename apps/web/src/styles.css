@@ -1191,6 +1191,41 @@
   margin-top: 16px;
 }
 
+.kds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.kds-ticket {
+  padding: 18px;
+  border-left: 4px solid var(--brand-bright);
+}
+
+.kds-ticket--late {
+  border-left-color: var(--danger, #d94841);
+}
+
+.kds-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.kds-items > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kds-items span,
+.kds-items small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .payment-section {
   display: flex;
   flex-direction: column;

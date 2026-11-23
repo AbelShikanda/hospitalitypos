@@ -23,6 +23,7 @@ import {
   type AppEnv,
 } from "./auth.js";
 import { registerFloorRoutes } from "./floor.js";
+import { registerKdsRoutes } from "./kds.js";
 import { registerMenuRoutes } from "./menu.js";
 import { registerOrderRoutes } from "./orders.js";
 import { registerPaymentRoutes } from "./payments.js";
@@ -65,7 +66,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 9, build }),
+    context.json({ app: version, edge: version, schema: 10, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -235,6 +236,7 @@ export function createEdgeApp({
   registerOrderRoutes(app, db);
   registerPrintRoutes(app, db);
   registerPaymentRoutes(app, db);
+  registerKdsRoutes(app, db);
 
   if (webDist !== null) {
     const dist =

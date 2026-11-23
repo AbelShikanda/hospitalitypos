@@ -778,6 +778,30 @@ tenant-scoped through the payment attempt rather than a client-supplied tenant.
 
 ---
 
+## ADR-029 — Live tickets use SSE instead of WebSockets
+
+**Status:** Accepted
+
+**Context:** KDS tickets and waiter views need sub-second updates on the venue
+LAN, but the edge already speaks HTTP and the zero-cost baseline avoids extra
+runtime dependencies.
+
+**Decision:**
+
+- The edge publishes in-memory domain events for order mutations.
+- `GET /api/kds/events` exposes them as Server-Sent Events, filtered by venue
+  and station, with heartbeats and cleanup on disconnect.
+- The PWA uses `EventSource` to refresh KDS and floor views. Writes still go
+  through the outbox, so a queued change refreshes on flush as well.
+- Station routing is snapshotted onto each order item at sale time, so later
+  menu edits do not move existing tickets.
+
+**Consequences:** Live updates need no WebSocket package or proxy upgrade.
+SSE is one-way, which is sufficient for notifications; mutations continue over
+normal HTTP. Multi-process edge deployments would need a shared event bus.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

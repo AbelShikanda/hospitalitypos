@@ -54,5 +54,7 @@ move or merge between tables. PWA writes are optimistic and queued locally with
 automatic retry. Phase 2 adds VAT-inclusive discounts and tips, splits, void
 reasons, 80mm receipts, a retryable print queue and drawer kick. Phase 3 adds
 idempotent cash, manual M-Pesa and PDQ standalone capture with confirmation,
-reversal and reconciliation. Daraja STK, integrated PDQ and KDS routing remain
-queued. See `TASKS.md` for the live checklist.
+reversal and reconciliation. Daraja STK Push uses encrypted per-tenant
+credentials with callback confirmation. KDS station routing uses SSE for live
+tickets and supports reprints. Integrated PDQ remains queued. See `TASKS.md`
+for the live checklist.

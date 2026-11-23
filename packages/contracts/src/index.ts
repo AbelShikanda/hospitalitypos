@@ -213,6 +213,18 @@ export const courseSchema = z.enum([
   "other",
 ]);
 
+export const stationSchema = z.object({
+  id: ulid,
+  name: z.string().min(1),
+  type: z.enum(["kitchen", "bar"]),
+});
+
+export const createStationSchema = z.object({
+  venue_id: ulid,
+  name: z.string().min(1).max(120),
+  type: z.enum(["kitchen", "bar"]).default("kitchen"),
+});
+
 export const menuModifierSchema = z.object({
   id: ulid,
   name: z.string().min(1),
@@ -235,6 +247,7 @@ export const menuItemSchema = z.object({
   price_minor: z.number().int().nonnegative(),
   tax_rate: z.number().int().nonnegative(),
   course: courseSchema,
+  station_id: ulid.nullable().optional(),
   is_available: z.boolean(),
   modifier_groups: z.array(menuModifierGroupSchema),
 });
@@ -276,6 +289,7 @@ export const createMenuItemSchema = z.object({
   price_minor: z.number().int().positive(),
   tax_rate: z.number().int().min(0).max(100).default(16),
   course: courseSchema.default("main"),
+  station_id: ulid.nullable().optional(),
   is_available: z.boolean().default(true),
 });
 
@@ -358,6 +372,7 @@ export const orderItemSchema = z.object({
   quantity: z.number().int().positive(),
   tax_rate: z.number().int().nonnegative(),
   course: courseSchema,
+  station_id: ulid.nullable().optional(),
   line_total_minor: z.number().int().nonnegative(),
   notes: z.string().nullable(),
   status: z.string(),
@@ -390,6 +405,8 @@ export const orderSchema = z.object({
 
 export type PrintReceipt = z.infer<typeof printReceiptSchema>;
 export type PrintJob = z.infer<typeof printJobSchema>;
+export type Station = z.infer<typeof stationSchema>;
+export type CreateStation = z.infer<typeof createStationSchema>;
 export type Health = z.infer<typeof healthSchema>;
 export type Version = z.infer<typeof versionSchema>;
 export type Tenant = z.infer<typeof tenantSchema>;

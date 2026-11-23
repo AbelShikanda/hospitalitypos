@@ -148,6 +148,22 @@ type Payment = {
   created_at: string;
 };
 
+type Station = {
+  id: string;
+  name: string;
+  type: "kitchen" | "bar";
+};
+
+type KdsTicket = {
+  id: string;
+  number: string;
+  status: string;
+  table_name: string | null;
+  created_at: string;
+  notes: string | null;
+  items: Order["items"];
+};
+
 type ReconciliationRow = {
   method: string;
   attempts: number;
@@ -1232,6 +1248,15 @@ function TablesView({ venueId }: { venueId: string }) {
     [venueId],
   );
 
+  useEffect(() => {
+    const source = new EventSource(
+      `/api/kds/events?venue_id=${encodeURIComponent(venueId)}`,
+      { withCredentials: true },
+    );
+    source.addEventListener("update", () => void refresh());
+    return () => source.close();
+  }, [venueId]);
+
   if (selected) {
     return (
       <OrderBuilder
@@ -1982,6 +2007,189 @@ function BillView({
   );
 }
 
+function KdsView({ venueId }: { venueId: string }) {
+  const [stations, setStations] = useState<Station[]>([]);
+  const [stationId, setStationId] = useState("");
+  const [tickets, setTickets] = useState<KdsTicket[]>([]);
+  const [notice, setNotice] = useState("");
+
+  async function refresh() {
+    try {
+      const response = await fetch(
+        `/api/kds/tickets?venue_id=${encodeURIComponent(venueId)}${stationId ? `&station_id=${encodeURIComponent(stationId)}` : ""}`,
+        { credentials: "same-origin" },
+      );
+      if (!response.ok) throw new Error("tickets failed");
+      setTickets((await response.json()) as KdsTicket[]);
+    } catch {
+      setNotice("Could not load tickets.");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStations() {
+      try {
+        const response = await fetch(
+          `/api/stations?venue_id=${encodeURIComponent(venueId)}`,
+          { credentials: "same-origin" },
+        );
+        if (!response.ok) throw new Error("stations failed");
+        const data = (await response.json()) as Station[];
+        if (cancelled) return;
+        setStations(data);
+        setStationId((current) => current || data[0]?.id || "");
+      } catch {
+        if (!cancelled) setNotice("Could not load stations.");
+      }
+    }
+    void loadStations();
+    return () => {
+      cancelled = true;
+    };
+  }, [venueId]);
+
+  useEffect(() => {
+    void refresh();
+    const source = new EventSource(
+      `/api/kds/events?venue_id=${encodeURIComponent(venueId)}${stationId ? `&station_id=${encodeURIComponent(stationId)}` : ""}`,
+      { withCredentials: true },
+    );
+    source.addEventListener("update", () => void refresh());
+    return () => source.close();
+  }, [venueId, stationId]);
+
+  function nextStatus(status: string): string | null {
+    if (status === "open" || status === "sent") return "preparing";
+    if (status === "preparing") return "ready";
+    if (status === "ready") return "served";
+    return null;
+  }
+
+  function bump(ticket: KdsTicket) {
+    const next = nextStatus(ticket.status);
+    if (!next) return;
+    enqueueOutbox({
+      url: `/api/orders/${ticket.id}/status`,
+      body: { status: next, idempotency_key: crypto.randomUUID() },
+    });
+    setNotice(`${ticket.number} moved to ${next}.`);
+  }
+
+  function reprint(ticket: KdsTicket) {
+    if (!stationId) return;
+    enqueueOutbox({
+      url: "/api/print/kitchen",
+      body: {
+        order_id: ticket.id,
+        station_id: stationId,
+        idempotency_key: crypto.randomUUID(),
+      },
+    });
+    setNotice(`${ticket.number} reprint queued.`);
+  }
+
+  const selected = stations.find((station) => station.id === stationId);
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Kitchen display</span>
+          <h1>{selected?.name ?? "KDS"}</h1>
+          <p className="muted">Live tickets routed to this station.</p>
+        </div>
+        <select
+          className="bill-select"
+          value={stationId}
+          onChange={(event) => setStationId(event.target.value)}
+        >
+          {stations.map((station) => (
+            <option key={station.id} value={station.id}>
+              {station.name} · {station.type}
+            </option>
+          ))}
+        </select>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+
+      {tickets.length === 0 ? (
+        <section className="card empty-state">
+          <h2>No tickets</h2>
+          <p className="muted">New orders for this station appear here.</p>
+        </section>
+      ) : (
+        <div className="kds-grid">
+          {tickets.map((ticket) => {
+            const ageMinutes = Math.max(
+              0,
+              Math.floor(
+                (Date.now() - new Date(ticket.created_at).getTime()) / 60000,
+              ),
+            );
+            const next = nextStatus(ticket.status);
+            return (
+              <section
+                className={`card kds-ticket ${ageMinutes > 20 ? "kds-ticket--late" : ""}`}
+                key={ticket.id}
+              >
+                <header className="area-head">
+                  <h2>
+                    {ticket.table_name ?? "Takeaway"} · {ticket.number}
+                  </h2>
+                  <span>
+                    {ticket.status} · {ageMinutes}m
+                  </span>
+                </header>
+                <div className="kds-items">
+                  {ticket.items.map((item) => (
+                    <div key={item.id}>
+                      <strong>
+                        {item.quantity}x {item.name}
+                      </strong>
+                      <span>
+                        {item.course} · {item.status}
+                      </span>
+                      {item.modifiers.length ? (
+                        <small>
+                          {item.modifiers
+                            .map((modifier) => modifier.name)
+                            .join(" · ")}
+                        </small>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                {ticket.notes ? (
+                  <p className="order-note">{ticket.notes}</p>
+                ) : null}
+                <div className="builder-actions">
+                  <button
+                    className="theme-button"
+                    type="button"
+                    onClick={() => reprint(ticket)}
+                  >
+                    Reprint
+                  </button>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    disabled={!next}
+                    onClick={() => bump(ticket)}
+                  >
+                    {next ? `Mark ${next}` : ticket.status}
+                  </button>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -2185,6 +2393,8 @@ function App() {
             tenantName={bootstrap?.tenant.name ?? "Hospitality POS"}
             role={session?.role ?? "waiter"}
           />
+        ) : view === "KDS" ? (
+          <KdsView venueId={venueId} />
         ) : (
           <Placeholder view={view} />
         )}

@@ -148,11 +148,11 @@ payment; all reconcile in reports; all idempotent.
 
 **Exit:** Sent orders appear on KDS in <2s on LAN; status flows back to the floor.
 
-- [ ] Station config (kitchen, bar) and item→station routing.
-- [ ] Edge WebSocket channel for live tickets.
-- [ ] KDS UI: ticket queue, aging colors, bump/preparing/ready.
-- [ ] Status changes propagate to waiter view.
-- [ ] Reprint kitchen ticket on demand.
+- [x] Station config (kitchen, bar) and item→station routing.
+- [x] Edge live-ticket channel using SSE (no extra dependency).
+- [x] KDS UI: ticket queue, aging colors, bump/preparing/ready.
+- [x] Status changes propagate to waiter view.
+- [x] Reprint kitchen ticket on demand.
 
 ---
 

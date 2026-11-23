@@ -42,6 +42,15 @@ export interface SessionsTable {
   revoked_at: Timestamp | null;
 }
 
+export interface StationsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  name: string;
+  type: string;
+  created_at: Timestamp;
+}
+
 export interface MenuCategoriesTable {
   id: string;
   tenant_id: string;
@@ -59,6 +68,7 @@ export interface MenuItemsTable {
   price_minor: number;
   tax_rate: number;
   course: string;
+  station_id: string | null;
   is_available: number;
   sort_order: number;
   created_at: Timestamp;
@@ -148,6 +158,7 @@ export interface OrderItemsTable {
   quantity: number;
   tax_rate: number;
   course: string;
+  station_id: string | null;
   line_total_minor: number;
   notes: string | null;
   status: string;
@@ -230,6 +241,7 @@ export interface PrintJobsTable {
 
 export interface Database {
   tenants: TenantsTable;
+  stations: StationsTable;
   venues: VenuesTable;
   users: UsersTable;
   memberships: MembershipsTable;

@@ -108,19 +108,55 @@ const DEMO_TABLES = [
   { area: "Terrace", name: "T6", seats: 4, status: "free" },
 ] as const;
 
+async function ensureStations(
+  db: Kysely<Database>,
+  tenantId: string,
+  venueId: string,
+): Promise<{ kitchenId: string; barId: string }> {
+  const definitions = [
+    { key: "kitchenId", name: "Kitchen", type: "kitchen" },
+    { key: "barId", name: "Bar", type: "bar" },
+  ] as const;
+  const ids: Record<string, string> = {};
+
+  for (const definition of definitions) {
+    const existing = await db
+      .selectFrom("stations")
+      .select("id")
+      .where("tenant_id", "=", tenantId)
+      .where("venue_id", "=", venueId)
+      .where("name", "=", definition.name)
+      .executeTakeFirst();
+    if (existing) {
+      ids[definition.key] = existing.id;
+      continue;
+    }
+    const id = ulid();
+    await db
+      .insertInto("stations")
+      .values({
+        id,
+        tenant_id: tenantId,
+        venue_id: venueId,
+        name: definition.name,
+        type: definition.type,
+        created_at: new Date().toISOString(),
+      })
+      .execute();
+    ids[definition.key] = id;
+  }
+
+  return {
+    kitchenId: ids.kitchenId!,
+    barId: ids.barId!,
+  };
+}
+
 async function seedMenuAndFloor(
   db: Kysely<Database>,
   tenantId: string,
   venueId?: string,
 ): Promise<void> {
-  const existing = await db
-    .selectFrom("menu_categories")
-    .select("id")
-    .where("tenant_id", "=", tenantId)
-    .executeTakeFirst();
-
-  if (existing) return;
-
   let venue = venueId;
   if (!venue) {
     const existingVenue = await db
@@ -144,6 +180,29 @@ async function seedMenuAndFloor(
         })
         .execute();
     }
+  }
+
+  const stations = await ensureStations(db, tenantId, venue);
+  const existing = await db
+    .selectFrom("menu_categories")
+    .select("id")
+    .where("tenant_id", "=", tenantId)
+    .executeTakeFirst();
+
+  if (existing) {
+    await db
+      .updateTable("menu_items")
+      .set({ station_id: stations.kitchenId })
+      .where("tenant_id", "=", tenantId)
+      .where("course", "!=", "drink")
+      .execute();
+    await db
+      .updateTable("menu_items")
+      .set({ station_id: stations.barId })
+      .where("tenant_id", "=", tenantId)
+      .where("course", "=", "drink")
+      .execute();
+    return;
   }
 
   const now = new Date().toISOString();
@@ -179,6 +238,8 @@ async function seedMenuAndFloor(
         price_minor: item.price,
         tax_rate: 16,
         course: item.course,
+        station_id:
+          item.course === "drink" ? stations.barId : stations.kitchenId,
         is_available: 1,
         sort_order: index,
         created_at: now,

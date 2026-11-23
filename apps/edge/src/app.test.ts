@@ -107,6 +107,7 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
       price_minor: 95000,
       tax_rate: 16,
       course: "main",
+      station_id: null,
       is_available: 1,
       sort_order: 0,
       created_at: now,
@@ -123,6 +124,7 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
       price_minor: 25000,
       tax_rate: 16,
       course: "starter",
+      station_id: null,
       is_available: 1,
       sort_order: 1,
       created_at: now,
@@ -1258,6 +1260,78 @@ describe("menu, floor and orders", () => {
     });
     expect(replay.status).toBe(200);
     await expect(replay.json()).resolves.toMatchObject({ duplicate: true });
+  });
+
+  it("routes tickets to a station and reprints them", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const stationResponse = await app.request("/api/stations", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "Grill",
+        type: "kitchen",
+      }),
+    });
+    expect(stationResponse.status).toBe(201);
+    const station = (await stationResponse.json()) as { id: string };
+
+    const assigned = await app.request(
+      `/api/menu/items/${menu.itemId}/station`,
+      {
+        method: "PATCH",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ station_id: station.id }),
+      },
+    );
+    expect(assigned.status).toBe(200);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const tickets = await app.request(
+      `/api/kds/tickets?venue_id=${fixture.venueId}&station_id=${station.id}`,
+      { headers: { cookie } },
+    );
+    const rows = (await tickets.json()) as Array<{
+      id: string;
+      items: Array<{ station_id: string | null }>;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(order.id);
+    expect(rows[0]?.items[0]?.station_id).toBe(station.id);
+
+    const printed = await app.request("/api/print/kitchen", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        station_id: station.id,
+        idempotency_key: "kitchen-print-001",
+      }),
+    });
+    expect(printed.status).toBe(201);
+    await expect(printed.json()).resolves.toMatchObject({ type: "kitchen" });
   });
 
   it("keeps menu and orders isolated between tenants", async () => {
