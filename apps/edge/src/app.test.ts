@@ -1458,6 +1458,111 @@ describe("menu, floor and orders", () => {
     expect(await csv.text()).toContain("cash");
   });
 
+  it("depletes stock on sale and restores it on void", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const stockResponse = await app.request("/api/stock", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "Beef",
+        unit: "g",
+        quantity: 10,
+        par_level: 5,
+      }),
+    });
+    expect(stockResponse.status).toBe(201);
+    const stock = (await stockResponse.json()) as { id: string };
+
+    const recipe = await app.request("/api/recipes", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        menu_item_id: menu.itemId,
+        stock_item_id: stock.id,
+        quantity: 2,
+      }),
+    });
+    expect(recipe.status).toBe(201);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 2,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const afterSale = await app.request(
+      `/api/stock?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const items = (await afterSale.json()) as Array<{
+      id: string;
+      quantity: number;
+    }>;
+    expect(items.find((item) => item.id === stock.id)?.quantity).toBe(6);
+
+    const voided = await app.request(`/api/orders/${order.id}/status`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ status: "voided", reason: "Customer cancelled" }),
+    });
+    expect(voided.status).toBe(200);
+
+    const afterVoid = await app.request(
+      `/api/stock?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const restored = (await afterVoid.json()) as Array<{
+      id: string;
+      quantity: number;
+    }>;
+    expect(restored.find((item) => item.id === stock.id)?.quantity).toBe(10);
+
+    const counted = await app.request(`/api/stock/${stock.id}/count`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ counted_quantity: 4, reason: "Weekly count" }),
+    });
+    expect(counted.status).toBe(200);
+    await expect(counted.json()).resolves.toMatchObject({ quantity: 4 });
+
+    const alerts = await app.request(
+      `/api/stock/alerts?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const alertRows = (await alerts.json()) as Array<{ id: string }>;
+    expect(alertRows).toHaveLength(1);
+    expect(alertRows[0]?.id).toBe(stock.id);
+
+    const supplier = await app.request("/api/suppliers", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "Nairobi Meats",
+        phone: "0712345678",
+      }),
+    });
+    expect(supplier.status).toBe(201);
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

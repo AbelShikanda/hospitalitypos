@@ -20,6 +20,7 @@ import type { Hono } from "hono";
 import { requireAuth, requireRole, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
 import { publishEvent } from "./events.js";
+import { depleteStockForOrder, reverseStockForOrder } from "./stock.js";
 
 export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   const order = await db
@@ -432,6 +433,19 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
 
         await trx.insertInto("order_items").values(itemRows).execute();
 
+        await depleteStockForOrder(
+          trx,
+          auth.tenantId,
+          venue.id,
+          lines.map((line, index) => ({
+            itemId: line.item.id,
+            quantity: line.quantity,
+            referenceId: itemIds[index]!,
+            orderId,
+          })),
+          auth.userId,
+        );
+
         if (modifierRows.length) {
           await trx
             .insertInto("order_item_modifiers")
@@ -598,6 +612,19 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     try {
       await db.transaction().execute(async (trx) => {
         await trx.insertInto("order_items").values(itemRows).execute();
+
+        await depleteStockForOrder(
+          trx,
+          auth.tenantId,
+          order.venue_id,
+          lines.map((line, index) => ({
+            itemId: line.item.id,
+            quantity: line.quantity,
+            referenceId: itemIds[index]!,
+            orderId: order.id,
+          })),
+          auth.userId,
+        );
 
         if (modifierRows.length) {
           await trx
@@ -1224,6 +1251,10 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
           .where("order_id", "=", order.id)
           .where("tenant_id", "=", auth.tenantId)
           .execute();
+      }
+
+      if (next === "voided") {
+        await reverseStockForOrder(trx, auth.tenantId, order.id, auth.userId);
       }
 
       if (order.table_id && (next === "closed" || next === "voided")) {

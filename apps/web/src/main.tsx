@@ -164,6 +164,30 @@ type KdsTicket = {
   items: Order["items"];
 };
 
+type StockItem = {
+  id: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  par_level: number;
+  cost_minor: number;
+  is_low?: boolean;
+};
+
+type Recipe = {
+  id: string;
+  menu_item_id: string;
+  stock_item_id: string;
+  quantity: number;
+};
+
+type Supplier = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+};
+
 type Shift = {
   id: string;
   venue_id: string;
@@ -2522,6 +2546,383 @@ function ShiftsView({
   );
 }
 
+function StockView({
+  venueId,
+  role,
+}: {
+  venueId: string;
+  role: Role;
+}) {
+  const [items, setItems] = useState<StockItem[]>([]);
+  const [alerts, setAlerts] = useState<StockItem[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("pcs");
+  const [quantity, setQuantity] = useState("0");
+  const [parLevel, setParLevel] = useState("0");
+  const [recipeMenuId, setRecipeMenuId] = useState("");
+  const [recipeStockId, setRecipeStockId] = useState("");
+  const [recipeQuantity, setRecipeQuantity] = useState("1");
+  const [adjustQuantity, setAdjustQuantity] = useState("0");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [countQuantity, setCountQuantity] = useState("0");
+  const [supplierName, setSupplierName] = useState("");
+  const [notice, setNotice] = useState("");
+  const canEdit = role === "owner" || role === "manager";
+
+  async function refresh() {
+    try {
+      const [stockResponse, alertsResponse, recipesResponse, suppliersResponse, menuResponse] =
+        await Promise.all([
+          fetch(`/api/stock?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+          fetch(`/api/stock/alerts?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+          fetch("/api/recipes", { credentials: "same-origin" }),
+          fetch(`/api/suppliers?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+          fetch(`/api/menu?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+        ]);
+      if (
+        !stockResponse.ok ||
+        !alertsResponse.ok ||
+        !recipesResponse.ok ||
+        !suppliersResponse.ok ||
+        !menuResponse.ok
+      ) {
+        throw new Error("stock load failed");
+      }
+      setItems((await stockResponse.json()) as StockItem[]);
+      setAlerts((await alertsResponse.json()) as StockItem[]);
+      setRecipes((await recipesResponse.json()) as Recipe[]);
+      setSuppliers((await suppliersResponse.json()) as Supplier[]);
+      setMenu((await menuResponse.json()) as Menu);
+    } catch {
+      setNotice("Could not load stock.");
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [venueId]);
+
+  useEffect(
+    () =>
+      subscribeOutbox((count) => {
+        if (count === 0) void refresh();
+      }),
+    [venueId],
+  );
+
+  function createItem() {
+    if (!name.trim()) return;
+    enqueueOutbox({
+      url: "/api/stock",
+      body: {
+        venue_id: venueId,
+        name: name.trim(),
+        unit,
+        quantity: Number(quantity) || 0,
+        par_level: Number(parLevel) || 0,
+      },
+    });
+    setNotice("Stock item queued.");
+    setName("");
+  }
+
+  function createRecipe() {
+    if (!recipeMenuId || !recipeStockId) return;
+    enqueueOutbox({
+      url: "/api/recipes",
+      body: {
+        menu_item_id: recipeMenuId,
+        stock_item_id: recipeStockId,
+        quantity: Number(recipeQuantity) || 1,
+      },
+    });
+    setNotice("Recipe queued.");
+  }
+
+  function adjust(item: StockItem, mode: "adjust" | "count") {
+    if (adjustReason.trim().length < 3) return;
+    enqueueOutbox({
+      url: `/api/stock/${item.id}/${mode}`,
+      body:
+        mode === "adjust"
+          ? {
+              quantity_delta: Number(adjustQuantity) || 0,
+              reason: adjustReason.trim(),
+            }
+          : {
+              counted_quantity: Number(countQuantity) || 0,
+              reason: adjustReason.trim(),
+            },
+    });
+    setNotice(`${mode} queued.`);
+    setAdjustReason("");
+  }
+
+  function createSupplier() {
+    if (!supplierName.trim()) return;
+    enqueueOutbox({
+      url: "/api/suppliers",
+      body: { venue_id: venueId, name: supplierName.trim() },
+    });
+    setNotice("Supplier queued.");
+    setSupplierName("");
+  }
+
+  const menuItems = menu?.categories.flatMap((category) => category.items) ?? [];
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Inventory</span>
+          <h1>Stock</h1>
+          <p className="muted">
+            Depletion follows sales; counts and adjustments keep levels honest.
+          </p>
+        </div>
+        <span className="pill">
+          <span
+            className={`status-dot ${alerts.length ? "status-dot--danger" : "status-dot--success"}`}
+          />
+          {alerts.length} low
+        </span>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+
+      {canEdit ? (
+        <section className="card bill-card">
+          <div className="bill-controls">
+            <label>
+              <span>New item</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} />
+            </label>
+            <label>
+              <span>Unit</span>
+              <input value={unit} onChange={(event) => setUnit(event.target.value)} />
+            </label>
+            <label>
+              <span>Quantity</span>
+              <input
+                type="number"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Par level</span>
+              <input
+                type="number"
+                value={parLevel}
+                onChange={(event) => setParLevel(event.target.value)}
+              />
+            </label>
+            <button className="btn-primary" type="button" onClick={createItem}>
+              Add stock item
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="bill-grid">
+        <section className="card bill-card">
+          <header className="area-head">
+            <h2>Stock items</h2>
+            <span>{items.length} items</span>
+          </header>
+          <div className="split-list">
+            {items.map((item) => (
+              <div key={item.id} className={item.is_low ? "stock-low" : ""}>
+                <span>
+                  {item.name}
+                  <small>
+                    {item.quantity} {item.unit} · par {item.par_level}
+                  </small>
+                </span>
+                <strong>{money(item.cost_minor)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card receipt-preview">
+          <header className="area-head">
+            <h2>Low stock</h2>
+            <span>{alerts.length} alerts</span>
+          </header>
+          <div className="split-list">
+            {alerts.length === 0 ? (
+              <p className="muted">Everything is above par.</p>
+            ) : (
+              alerts.map((item) => (
+                <div key={item.id}>
+                  <span>
+                    {item.name}
+                    <small>short by {item.par_level - item.quantity}</small>
+                  </span>
+                  <strong>{item.quantity}</strong>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      {canEdit ? (
+        <section className="card bill-card stock-tools">
+          <header className="area-head">
+            <h2>Recipes and counts</h2>
+            <span>manager</span>
+          </header>
+          <div className="bill-controls">
+            <label>
+              <span>Menu item</span>
+              <select
+                value={recipeMenuId}
+                onChange={(event) => setRecipeMenuId(event.target.value)}
+              >
+                <option value="">Choose item</option>
+                {menuItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Stock item</span>
+              <select
+                value={recipeStockId}
+                onChange={(event) => setRecipeStockId(event.target.value)}
+              >
+                <option value="">Choose stock</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Qty per sale</span>
+              <input
+                type="number"
+                value={recipeQuantity}
+                onChange={(event) => setRecipeQuantity(event.target.value)}
+              />
+            </label>
+            <button className="theme-button" type="button" onClick={createRecipe}>
+              Link recipe
+            </button>
+          </div>
+          <div className="bill-controls">
+            <label>
+              <span>Adjust / count</span>
+              <select
+                value={recipeStockId}
+                onChange={(event) => setRecipeStockId(event.target.value)}
+              >
+                <option value="">Choose stock</option>
+                {items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Delta</span>
+              <input
+                type="number"
+                value={adjustQuantity}
+                onChange={(event) => setAdjustQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Counted</span>
+              <input
+                type="number"
+                value={countQuantity}
+                onChange={(event) => setCountQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Reason</span>
+              <input
+                value={adjustReason}
+                onChange={(event) => setAdjustReason(event.target.value)}
+              />
+            </label>
+            <button
+              className="theme-button"
+              type="button"
+              onClick={() =>
+                items
+                  .filter((item) => item.id === recipeStockId)
+                  .forEach((item) => adjust(item, "adjust"))
+              }
+            >
+              Adjust
+            </button>
+            <button
+              className="theme-button"
+              type="button"
+              onClick={() =>
+                items
+                  .filter((item) => item.id === recipeStockId)
+                  .forEach((item) => adjust(item, "count"))
+              }
+            >
+              Count
+            </button>
+          </div>
+          <p className="muted">{recipes.length} recipe links configured.</p>
+        </section>
+      ) : null}
+
+      <section className="card bill-card stock-tools">
+        <header className="area-head">
+          <h2>Suppliers</h2>
+          <span>{suppliers.length}</span>
+        </header>
+        <div className="bill-controls">
+          <label>
+            <span>Name</span>
+            <input
+              value={supplierName}
+              onChange={(event) => setSupplierName(event.target.value)}
+            />
+          </label>
+          {canEdit ? (
+            <button className="theme-button" type="button" onClick={createSupplier}>
+              Add supplier
+            </button>
+          ) : null}
+        </div>
+        <div className="split-list">
+          {suppliers.map((supplier) => (
+            <div key={supplier.id}>
+              <span>{supplier.name}</span>
+              <small>{supplier.phone ?? supplier.email ?? ""}</small>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -2729,6 +3130,8 @@ function App() {
           <KdsView venueId={venueId} />
         ) : view === "Shifts" ? (
           <ShiftsView venueId={venueId} role={session?.role ?? "waiter"} />
+        ) : view === "Stock" ? (
+          <StockView venueId={venueId} role={session?.role ?? "waiter"} />
         ) : (
           <Placeholder view={view} />
         )}

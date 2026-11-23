@@ -174,12 +174,12 @@ Z-report that balances.
 **Exit:** Selling an item depletes linked stock; low stock alerts fire; a stock
 count adjusts levels with an audit trail.
 
-- [ ] Stock items, units, par levels.
-- [ ] Recipe/depletion links (menu item → stock items).
-- [ ] Stock movements on sale, void, and manual adjustment.
-- [ ] Low-stock alerts.
-- [ ] Stock count / variance workflow.
-- [ ] Basic supplier records (P2 depth).
+- [x] Stock items, units, par levels.
+- [x] Recipe/depletion links (menu item → stock items).
+- [x] Stock movements on sale, void, and manual adjustment.
+- [x] Low-stock alerts.
+- [x] Stock count / variance workflow.
+- [x] Basic supplier records (P2 depth).
 
 ---
 

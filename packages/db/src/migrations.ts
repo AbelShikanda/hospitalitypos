@@ -653,6 +653,108 @@ const shiftsAndDiscounts: Migration = {
   },
 };
 
+const inventory: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("stock_items")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("name", "varchar(120)", (column) => column.notNull())
+      .addColumn("unit", "varchar(20)", (column) =>
+        column.notNull().defaultTo("pcs"),
+      )
+      .addColumn("quantity", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("par_level", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("cost_minor", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("recipes")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("menu_item_id", "char(26)", (column) => column.notNull())
+      .addColumn("stock_item_id", "char(26)", (column) => column.notNull())
+      .addColumn("quantity", "integer", (column) =>
+        column.notNull().defaultTo(1),
+      )
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("stock_movements")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("stock_item_id", "char(26)", (column) => column.notNull())
+      .addColumn("type", "varchar(20)", (column) => column.notNull())
+      .addColumn("quantity_delta", "integer", (column) => column.notNull())
+      .addColumn("reason", "text")
+      .addColumn("reference_id", "char(26)")
+      .addColumn("order_id", "char(26)")
+      .addColumn("actor_user_id", "char(26)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("suppliers")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("name", "varchar(120)", (column) => column.notNull())
+      .addColumn("phone", "varchar(40)")
+      .addColumn("email", "varchar(120)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("stock_items_tenant_venue_idx")
+      .ifNotExists()
+      .on("stock_items")
+      .columns(["tenant_id", "venue_id"])
+      .execute();
+    await db.schema
+      .createIndex("recipes_tenant_item_uidx")
+      .ifNotExists()
+      .on("recipes")
+      .columns(["tenant_id", "menu_item_id", "stock_item_id"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("stock_movements_reference_uidx")
+      .ifNotExists()
+      .on("stock_movements")
+      .columns(["tenant_id", "reference_id", "stock_item_id", "type"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("suppliers_tenant_venue_idx")
+      .ifNotExists()
+      .on("suppliers")
+      .columns(["tenant_id", "venue_id"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("suppliers").ifExists().execute();
+    await db.schema.dropTable("stock_movements").ifExists().execute();
+    await db.schema.dropTable("recipes").ifExists().execute();
+    await db.schema.dropTable("stock_items").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -665,6 +767,7 @@ const migrations: Record<string, Migration> = {
   "009_payment_credentials": paymentCredentials,
   "010_stations": stations,
   "011_shifts_discounts": shiftsAndDiscounts,
+  "012_inventory": inventory,
 };
 
 export const migrationProvider: MigrationProvider = {

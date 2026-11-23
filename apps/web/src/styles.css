@@ -1191,6 +1191,18 @@
   margin-top: 16px;
 }
 
+.stock-tools {
+  margin-top: 18px;
+}
+
+.stock-tools .bill-controls {
+  margin-top: 14px;
+}
+
+.stock-low {
+  color: var(--text-danger, #ff8b7a);
+}
+
 .shift-row {
   display: flex;
   align-items: center;

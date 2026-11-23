@@ -826,6 +826,28 @@ manager can close another staff member's shift.
 
 ---
 
+## ADR-031 — Stock depletion is an audited side effect of order items
+
+**Status:** Accepted
+
+**Context:** Recipes must deplete stock when a sale happens, but retried writes
+and voids must not double-count or leave stock silently wrong.
+
+**Decision:**
+
+- Recipes link a menu item to a stock item with a fixed quantity per sold unit.
+- Each sale writes a `sale` movement keyed by the order item ID and stock item;
+  a unique index prevents duplicates.
+- Voiding an order writes a compensating `void` movement for every sale.
+  Manual adjustments and counts write `adjustment` movements with a reason.
+- Low stock is derived from `quantity <= par_level`; no separate alert table.
+
+**Consequences:** Stock can be reconstructed from movements. Counts correct
+drift without rewriting history. Multi-location or supplier ordering remain
+outside this phase.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

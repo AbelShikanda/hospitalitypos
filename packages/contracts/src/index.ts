@@ -127,6 +127,36 @@ export const createPaymentSchema = z
     }
   });
 
+export const createStockItemSchema = z.object({
+  name: z.string().min(1).max(120),
+  unit: z.string().min(1).max(20).default("pcs"),
+  quantity: z.number().int().nonnegative().default(0),
+  par_level: z.number().int().nonnegative().default(0),
+  cost_minor: z.number().int().nonnegative().default(0),
+});
+
+export const createRecipeSchema = z.object({
+  menu_item_id: ulid,
+  stock_item_id: ulid,
+  quantity: z.number().int().positive(),
+});
+
+export const adjustStockSchema = z.object({
+  quantity_delta: z.number().int(),
+  reason: z.string().min(3).max(500),
+});
+
+export const stockCountSchema = z.object({
+  counted_quantity: z.number().int().nonnegative(),
+  reason: z.string().min(3).max(500),
+});
+
+export const createSupplierSchema = z.object({
+  name: z.string().min(1).max(120),
+  phone: z.string().max(40).optional(),
+  email: z.string().email().optional(),
+});
+
 export const clockInSchema = z.object({
   venue_id: ulid,
   starting_cash_minor: z.number().int().nonnegative().default(0),
@@ -472,6 +502,11 @@ export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;
 export type CreatePayment = z.infer<typeof createPaymentSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
+export type CreateStockItem = z.infer<typeof createStockItemSchema>;
+export type CreateRecipe = z.infer<typeof createRecipeSchema>;
+export type AdjustStock = z.infer<typeof adjustStockSchema>;
+export type StockCount = z.infer<typeof stockCountSchema>;
+export type CreateSupplier = z.infer<typeof createSupplierSchema>;
 export type ClockIn = z.infer<typeof clockInSchema>;
 export type ClockOut = z.infer<typeof clockOutSchema>;
 export type ApplyDiscount = z.infer<typeof applyDiscountSchema>;

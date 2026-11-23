@@ -187,6 +187,52 @@ export interface OrderEventsTable {
   created_at: Timestamp;
 }
 
+export interface StockItemsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  par_level: number;
+  cost_minor: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface RecipesTable {
+  id: string;
+  tenant_id: string;
+  menu_item_id: string;
+  stock_item_id: string;
+  quantity: number;
+  created_at: Timestamp;
+}
+
+export interface StockMovementsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  stock_item_id: string;
+  type: string;
+  quantity_delta: number;
+  reason: string | null;
+  reference_id: string | null;
+  order_id: string | null;
+  actor_user_id: string | null;
+  created_at: Timestamp;
+}
+
+export interface SuppliersTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  created_at: Timestamp;
+}
+
 export interface ShiftsTable {
   id: string;
   tenant_id: string;
@@ -282,4 +328,8 @@ export interface Database {
   payment_events: PaymentEventsTable;
   payment_credentials: PaymentCredentialsTable;
   shifts: ShiftsTable;
+  stock_items: StockItemsTable;
+  recipes: RecipesTable;
+  stock_movements: StockMovementsTable;
+  suppliers: SuppliersTable;
 }
