@@ -9,3 +9,6 @@ data/
 .DS_Store
 playwright-report/
 test-results/
+
+# Local-only planning files (costs, pricing, client quotes). Never commit.
+local/
