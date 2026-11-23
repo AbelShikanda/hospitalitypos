@@ -236,6 +236,12 @@ function errorText(code: unknown): string {
       return "This order was already saved elsewhere. Refresh the floor.";
     case "order_closed":
       return "That tab is already closed.";
+    case "table_unavailable":
+      return "That table is not available.";
+    case "target_not_found":
+      return "The target tab no longer exists. Refresh and try again.";
+    case "target_closed":
+      return "That tab is already closed.";
     default:
       return "Could not save the order. Try again.";
   }
@@ -554,14 +560,21 @@ function OrderBuilder({
   table,
   venueId,
   existingOrderId,
+  floor,
+  orders,
   onClose,
   onDone,
 }: {
   table: FloorTable;
   venueId: string;
   existingOrderId?: string;
+  floor: Floor | null;
+  orders: OrderSummary[];
   onClose: () => void;
-  onDone: (order: Order, mode: "save" | "send") => void;
+  onDone: (
+    order: Order,
+    mode: "save" | "send" | "move" | "merge",
+  ) => void;
 }) {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [categoryId, setCategoryId] = useState("");
@@ -570,9 +583,13 @@ function OrderBuilder({
   const [courseToSend, setCourseToSend] = useState<Course | "all">("all");
   const [pending, setPending] = useState<MenuItem | null>(null);
   const [existingOrder, setExistingOrder] = useState<Order | null>(null);
+  const [moveTableId, setMoveTableId] = useState("");
+  const [mergeOrderId, setMergeOrderId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState<"save" | "send" | null>(null);
+  const [submitting, setSubmitting] = useState<
+    "save" | "send" | "move" | "merge" | null
+  >(null);
   const idempotencyKey = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -646,6 +663,73 @@ function OrderBuilder({
     courseToSend === "all" || pendingCourses.includes(courseToSend)
       ? courseToSend
       : "all";
+  const freeTables = (floor?.areas.flatMap((area) => area.tables) ?? []).filter(
+    (entry) => entry.status === "free",
+  );
+  const otherOrders = orders.filter(
+    (order) =>
+      order.id !== existingOrder?.id &&
+      order.status !== "closed" &&
+      order.status !== "voided",
+  );
+
+  async function moveTable() {
+    if (!existingOrder || !moveTableId) return;
+    setSubmitting("move");
+    setError("");
+    try {
+      const response = await fetch(`/api/orders/${existingOrder.id}/move`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          table_id: moveTableId,
+          idempotency_key: crypto.randomUUID(),
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(errorText(body?.error));
+        return;
+      }
+      onDone((await response.json()) as Order, "move");
+    } catch {
+      setError("Network error. The table was not moved.");
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
+  async function mergeTable() {
+    if (!existingOrder || !mergeOrderId) return;
+    setSubmitting("merge");
+    setError("");
+    try {
+      const response = await fetch(`/api/orders/${existingOrder.id}/merge`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          target_order_id: mergeOrderId,
+          idempotency_key: crypto.randomUUID(),
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(errorText(body?.error));
+        return;
+      }
+      onDone((await response.json()) as Order, "merge");
+    } catch {
+      setError("Network error. The tables were not merged.");
+    } finally {
+      setSubmitting(null);
+    }
+  }
 
   function addLine(item: MenuItem, modifiers: Modifier[]) {
     const key = `${item.id}:${modifiers
@@ -779,6 +863,59 @@ function OrderBuilder({
           <span className="status-dot status-dot--success" /> Local
         </span>
       </header>
+
+      {existingOrder ? (
+        <section className="card tab-actions">
+          <div className="tab-action">
+            <label>
+              <span>Move to table</span>
+              <select
+                value={moveTableId}
+                onChange={(event) => setMoveTableId(event.target.value)}
+              >
+                <option value="">Choose table</option>
+                {freeTables.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name} · {entry.seats} seats
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="theme-button"
+              type="button"
+              disabled={submitting !== null || !moveTableId}
+              onClick={() => void moveTable()}
+            >
+              {submitting === "move" ? "Moving…" : "Move"}
+            </button>
+          </div>
+          <div className="tab-action">
+            <label>
+              <span>Merge into tab</span>
+              <select
+                value={mergeOrderId}
+                onChange={(event) => setMergeOrderId(event.target.value)}
+              >
+                <option value="">Choose tab</option>
+                {otherOrders.map((order) => (
+                  <option key={order.id} value={order.id}>
+                    {order.number} · {order.table_name ?? "Takeaway"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="theme-button"
+              type="button"
+              disabled={submitting !== null || !mergeOrderId}
+              onClick={() => void mergeTable()}
+            >
+              {submitting === "merge" ? "Merging…" : "Merge"}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="builder-body">
         <section className="menu-panel">
@@ -1086,12 +1223,20 @@ function TablesView({ venueId }: { venueId: string }) {
         table={selected.table}
         venueId={venueId}
         existingOrderId={selected.orderId}
+        floor={floor}
+        orders={orders}
         onClose={() => setSelected(null)}
         onDone={(order, mode) => {
           setSelected(null);
-          setNotice(
-            `${order.number} ${mode === "send" ? "sent to kitchen" : "saved"} · ${money(order.total_minor)}`,
-          );
+          const suffix =
+            mode === "send"
+              ? "sent to kitchen"
+              : mode === "move"
+                ? "moved"
+                : mode === "merge"
+                  ? "merged"
+                  : "saved";
+          setNotice(`${order.number} ${suffix} · ${money(order.total_minor)}`);
           void refresh();
         }}
       />

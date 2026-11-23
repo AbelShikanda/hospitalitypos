@@ -72,6 +72,7 @@ interface MenuFixture {
   modifierId: string;
   areaId: string;
   tableId: string;
+  secondTableId: string;
 }
 
 async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
@@ -83,6 +84,7 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
   const modifierId = newId();
   const areaId = newId();
   const tableId = newId();
+  const secondTableId = newId();
 
   await db
     .insertInto("menu_categories")
@@ -183,6 +185,19 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
       created_at: now,
     })
     .execute();
+  await db
+    .insertInto("dining_tables")
+    .values({
+      id: secondTableId,
+      tenant_id: fixture.tenantId,
+      venue_id: fixture.venueId,
+      area_id: areaId,
+      name: "T2",
+      seats: 2,
+      status: "free",
+      created_at: now,
+    })
+    .execute();
 
   return {
     categoryId,
@@ -192,6 +207,7 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
     modifierId,
     areaId,
     tableId,
+    secondTableId,
   };
 }
 
@@ -801,6 +817,145 @@ describe("menu, floor and orders", () => {
     };
     expect(sentOrder.status).toBe("sent");
     expect(sentOrder.items.every((item) => item.status === "sent")).toBe(true);
+  });
+
+  it("moves an order to a free table and frees the old table", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const movePayload = {
+      table_id: menu.secondTableId,
+      idempotency_key: "move-key-0001",
+    };
+    const moved = await app.request(`/api/orders/${order.id}/move`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(movePayload),
+    });
+    expect(moved.status).toBe(200);
+    await expect(moved.json()).resolves.toMatchObject({
+      table_id: menu.secondTableId,
+    });
+
+    const floor = await app.request(`/api/floor?venue_id=${fixture.venueId}`, {
+      headers: { cookie },
+    });
+    const floorBody = (await floor.json()) as {
+      areas: Array<{ tables: Array<{ id: string; status: string }> }>;
+    };
+    const tables = floorBody.areas[0]?.tables ?? [];
+    expect(tables.find((table) => table.id === menu.tableId)?.status).toBe(
+      "free",
+    );
+    expect(tables.find((table) => table.id === menu.secondTableId)?.status).toBe(
+      "occupied",
+    );
+
+    const replay = await app.request(`/api/orders/${order.id}/move`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(movePayload),
+    });
+    expect(replay.status).toBe(200);
+  });
+
+  it("merges two tabs and frees the source table", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    async function createOrder(tableId: string) {
+      const response = await app.request("/api/orders", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          venue_id: fixture.venueId,
+          table_id: tableId,
+          items: [
+            {
+              item_id: menu.itemId,
+              quantity: 1,
+              modifier_ids: [menu.modifierId],
+            },
+          ],
+        }),
+      });
+      expect(response.status).toBe(201);
+      return (await response.json()) as { id: string };
+    }
+
+    const source = await createOrder(menu.tableId);
+    const target = await createOrder(menu.secondTableId);
+
+    const mergePayload = {
+      target_order_id: target.id,
+      idempotency_key: "merge-key-0001",
+    };
+    const merged = await app.request(`/api/orders/${source.id}/merge`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(mergePayload),
+    });
+    expect(merged.status).toBe(200);
+    const mergedOrder = (await merged.json()) as {
+      id: string;
+      total_minor: number;
+      items: Array<unknown>;
+    };
+    expect(mergedOrder).toMatchObject({
+      id: target.id,
+      total_minor: 230000,
+    });
+    expect(mergedOrder.items).toHaveLength(2);
+
+    const sourceAfter = await app.request(`/api/orders/${source.id}`, {
+      headers: { cookie },
+    });
+    await expect(sourceAfter.json()).resolves.toMatchObject({ status: "closed" });
+
+    const floor = await app.request(`/api/floor?venue_id=${fixture.venueId}`, {
+      headers: { cookie },
+    });
+    const floorBody = (await floor.json()) as {
+      areas: Array<{ tables: Array<{ id: string; status: string }> }>;
+    };
+    const tables = floorBody.areas[0]?.tables ?? [];
+    expect(tables.find((table) => table.id === menu.tableId)?.status).toBe(
+      "free",
+    );
+    expect(tables.find((table) => table.id === menu.secondTableId)?.status).toBe(
+      "occupied",
+    );
+
+    const replay = await app.request(`/api/orders/${source.id}/merge`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(mergePayload),
+    });
+    expect(replay.status).toBe(200);
   });
 
   it("keeps menu and orders isolated between tenants", async () => {

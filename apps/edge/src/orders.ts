@@ -1,6 +1,8 @@
 import {
   addOrderItemsSchema,
   createOrderSchema,
+  mergeOrderSchema,
+  moveOrderSchema,
   orderStatusSchema,
   sendOrderSchema,
   type CreateOrderItem,
@@ -679,6 +681,282 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     });
 
     return context.json(await loadOrder(db, auth.tenantId, order.id));
+  });
+
+  app.post("/api/orders/:id/move", requireAuth(db), async (context) => {
+    const body = await context.req.json().catch(() => null);
+    const parsed = moveOrderSchema.safeParse(body);
+    if (!parsed.success) {
+      return context.json({ error: "invalid_input" }, 400);
+    }
+
+    const auth = context.get("auth");
+    const input = parsed.data;
+    const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
+    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (order.status === "closed" || order.status === "voided") {
+      return context.json({ error: "order_closed" }, 409);
+    }
+
+    if (input.idempotency_key) {
+      const existingEvent = await db
+        .selectFrom("order_events")
+        .select(["order_id"])
+        .where("tenant_id", "=", auth.tenantId)
+        .where("idempotency_key", "=", input.idempotency_key)
+        .executeTakeFirst();
+
+      if (existingEvent) {
+        if (existingEvent.order_id !== order.id) {
+          return context.json({ error: "idempotency_conflict" }, 409);
+        }
+        return context.json(await loadOrder(db, auth.tenantId, order.id), 200);
+      }
+    }
+
+    const targetTableId = input.table_id;
+    if (targetTableId === order.table_id) {
+      return context.json(order);
+    }
+
+    let targetTable = null;
+    if (targetTableId) {
+      targetTable = await db
+        .selectFrom("dining_tables")
+        .selectAll()
+        .where("id", "=", targetTableId)
+        .where("tenant_id", "=", auth.tenantId)
+        .where("venue_id", "=", order.venue_id)
+        .executeTakeFirst();
+
+      if (!targetTable) return context.json({ error: "table_not_found" }, 404);
+      if (targetTable.status !== "free") {
+        return context.json({ error: "table_unavailable" }, 409);
+      }
+    }
+
+    const now = new Date().toISOString();
+    try {
+      await db.transaction().execute(async (trx) => {
+        if (order.table_id && order.table_id !== targetTableId) {
+          await trx
+            .updateTable("dining_tables")
+            .set({ status: "free" })
+            .where("id", "=", order.table_id)
+            .where("tenant_id", "=", auth.tenantId)
+            .execute();
+        }
+
+        if (targetTable) {
+          await trx
+            .updateTable("dining_tables")
+            .set({ status: "occupied" })
+            .where("id", "=", targetTable.id)
+            .where("tenant_id", "=", auth.tenantId)
+            .execute();
+        }
+
+        await trx
+          .updateTable("orders")
+          .set({ table_id: targetTableId, updated_at: now })
+          .where("id", "=", order.id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+
+        await trx
+          .insertInto("order_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            order_id: order.id,
+            type: "moved",
+            data: JSON.stringify({
+              from: order.table_id,
+              to: targetTableId,
+            }),
+            idempotency_key: input.idempotency_key ?? null,
+            actor_user_id: auth.userId,
+            created_at: now,
+          })
+          .execute();
+      });
+    } catch (error) {
+      if (input.idempotency_key) {
+        const existingEvent = await db
+          .selectFrom("order_events")
+          .select(["order_id"])
+          .where("tenant_id", "=", auth.tenantId)
+          .where("idempotency_key", "=", input.idempotency_key)
+          .executeTakeFirst();
+
+        if (existingEvent?.order_id === order.id) {
+          return context.json(
+            await loadOrder(db, auth.tenantId, order.id),
+            200,
+          );
+        }
+      }
+      throw error;
+    }
+
+    return context.json(await loadOrder(db, auth.tenantId, order.id));
+  });
+
+  app.post("/api/orders/:id/merge", requireAuth(db), async (context) => {
+    const body = await context.req.json().catch(() => null);
+    const parsed = mergeOrderSchema.safeParse(body);
+    if (!parsed.success) {
+      return context.json({ error: "invalid_input" }, 400);
+    }
+
+    const auth = context.get("auth");
+    const input = parsed.data;
+
+    if (input.idempotency_key) {
+      const existingEvent = await db
+        .selectFrom("order_events")
+        .select(["order_id"])
+        .where("tenant_id", "=", auth.tenantId)
+        .where("idempotency_key", "=", input.idempotency_key)
+        .executeTakeFirst();
+
+      if (existingEvent) {
+        if (existingEvent.order_id !== input.target_order_id) {
+          return context.json({ error: "idempotency_conflict" }, 409);
+        }
+        return context.json(
+          await loadOrder(db, auth.tenantId, input.target_order_id),
+          200,
+        );
+      }
+    }
+
+    const source = await loadOrder(db, auth.tenantId, context.req.param("id"));
+    if (!source) return context.json({ error: "order_not_found" }, 404);
+    if (source.status === "closed" || source.status === "voided") {
+      return context.json({ error: "order_closed" }, 409);
+    }
+    if (input.target_order_id === source.id) {
+      return context.json({ error: "invalid_input" }, 400);
+    }
+
+    const target = await loadOrder(db, auth.tenantId, input.target_order_id);
+    if (!target) return context.json({ error: "target_not_found" }, 404);
+    if (target.venue_id !== source.venue_id) {
+      return context.json({ error: "venue_mismatch" }, 400);
+    }
+    if (target.status === "closed" || target.status === "voided") {
+      return context.json({ error: "target_closed" }, 409);
+    }
+
+    const totals = orderTotals([
+      ...target.items.map((item) => ({
+        totalMinor: item.line_total_minor,
+        taxRate: item.tax_rate,
+      })),
+      ...source.items.map((item) => ({
+        totalMinor: item.line_total_minor,
+        taxRate: item.tax_rate,
+      })),
+    ]);
+
+    const now = new Date().toISOString();
+    try {
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .updateTable("order_items")
+          .set({ order_id: target.id })
+          .where("order_id", "=", source.id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+
+        await trx
+          .updateTable("orders")
+          .set({
+            subtotal_minor: totals.subtotalMinor,
+            tax_minor: totals.taxMinor,
+            total_minor: totals.totalMinor,
+            updated_at: now,
+          })
+          .where("id", "=", target.id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+
+        await trx
+          .updateTable("orders")
+          .set({
+            status: "closed",
+            table_id: null,
+            updated_at: now,
+            closed_at: now,
+          })
+          .where("id", "=", source.id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+
+        if (source.table_id) {
+          await trx
+            .updateTable("dining_tables")
+            .set({ status: "free" })
+            .where("id", "=", source.table_id)
+            .where("tenant_id", "=", auth.tenantId)
+            .execute();
+        }
+
+        await trx
+          .insertInto("order_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            order_id: source.id,
+            type: "merged_out",
+            data: JSON.stringify({
+              target_order_id: target.id,
+              item_count: source.items.length,
+            }),
+            idempotency_key: null,
+            actor_user_id: auth.userId,
+            created_at: now,
+          })
+          .execute();
+
+        await trx
+          .insertInto("order_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            order_id: target.id,
+            type: "merged_in",
+            data: JSON.stringify({
+              source_order_id: source.id,
+              item_count: source.items.length,
+            }),
+            idempotency_key: input.idempotency_key ?? null,
+            actor_user_id: auth.userId,
+            created_at: now,
+          })
+          .execute();
+      });
+    } catch (error) {
+      if (input.idempotency_key) {
+        const existingEvent = await db
+          .selectFrom("order_events")
+          .select(["order_id"])
+          .where("tenant_id", "=", auth.tenantId)
+          .where("idempotency_key", "=", input.idempotency_key)
+          .executeTakeFirst();
+
+        if (existingEvent?.order_id === target.id) {
+          return context.json(
+            await loadOrder(db, auth.tenantId, target.id),
+            200,
+          );
+        }
+      }
+      throw error;
+    }
+
+    return context.json(await loadOrder(db, auth.tenantId, target.id));
   });
 
   app.post("/api/orders/:id/status", requireAuth(db), async (context) => {

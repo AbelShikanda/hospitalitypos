@@ -650,6 +650,32 @@ line so later menu edits do not reshuffle existing tickets.
 
 ---
 
+## ADR-024 — Table moves and merges are audited mutations
+
+**Status:** Accepted
+
+**Context:** Guests change tables or ask to combine bills. The floor status must
+stay consistent, and a retry after a dropped response must not move a tab twice
+or merge it twice.
+
+**Decision:**
+
+- `POST /api/orders/:id/move` accepts a target table (or `null` for takeaway),
+  frees the old table, occupies the new one and records a `moved` event.
+- `POST /api/orders/:id/merge` moves all source items into the target order,
+  recomputes the target total, closes the source order, frees its table and
+  records `merged_out` / `merged_in` events.
+- Both endpoints accept an optional idempotency key stored on the target event;
+  replays return the resulting order.
+- The PWA exposes both actions on an open tab and refreshes the floor on
+  completion.
+
+**Consequences:** The floor view can be derived from table status plus active
+orders. Merged tabs keep the target order number while both original numbers
+remain in the audit trail.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

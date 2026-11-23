@@ -1113,7 +1113,45 @@
 }
 
 @media (max-width: 980px) {
-  .builder-body {
+.tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 18px;
+}
+
+.tab-action {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 1 1 260px;
+}
+
+.tab-action label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tab-action select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.builder-body {
     grid-template-columns: 1fr;
   }
 

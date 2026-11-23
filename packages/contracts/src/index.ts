@@ -265,6 +265,16 @@ export const sendOrderSchema = z.object({
   course: courseSchema.optional(),
 });
 
+export const moveOrderSchema = z.object({
+  table_id: ulid.nullable(),
+  idempotency_key: z.string().min(8).max(128).optional(),
+});
+
+export const mergeOrderSchema = z.object({
+  target_order_id: ulid,
+  idempotency_key: z.string().min(8).max(128).optional(),
+});
+
 export const orderStatusSchema = z.enum([
   "open",
   "sent",
@@ -336,6 +346,8 @@ export type CreateOrderItem = z.infer<typeof createOrderItemSchema>;
 export type CreateOrder = z.infer<typeof createOrderSchema>;
 export type AddOrderItems = z.infer<typeof addOrderItemsSchema>;
 export type SendOrder = z.infer<typeof sendOrderSchema>;
+export type MoveOrder = z.infer<typeof moveOrderSchema>;
+export type MergeOrder = z.infer<typeof mergeOrderSchema>;
 export type Course = z.infer<typeof courseSchema>;
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 export type OrderItem = z.infer<typeof orderItemSchema>;

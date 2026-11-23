@@ -97,7 +97,7 @@ data survives an edge-node restart.
 - [x] Order notes on creation and appended rounds.
 - [ ] Courses.
 - [x] Open tabs: reopen, append rounds and send new items.
-- [ ] Move/merge tables.
+- [x] Move/merge tables with table-status updates and audit events.
 - [x] Local persistence on edge (SQLite) + restart survival.
 - [ ] Optimistic UI in PWA.
 - [x] Idempotency keys on order creation and safe transition retries.
