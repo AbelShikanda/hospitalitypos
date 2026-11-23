@@ -127,6 +127,23 @@ export const createPaymentSchema = z
     }
   });
 
+export const darajaCredentialsSchema = z.object({
+  environment: z.enum(["sandbox", "production"]),
+  consumer_key: z.string().min(4).max(256),
+  consumer_secret: z.string().min(4).max(256),
+  shortcode: z.string().min(4).max(32),
+  passkey: z.string().min(4).max(256),
+  callback_url: z.string().url().optional(),
+});
+
+export const credentialSummarySchema = z.object({
+  id: ulid,
+  provider: z.string(),
+  environment: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const updatePaymentStatusSchema = z.object({
   status: z.enum(["confirmed", "cancelled"]),
   reason: z.string().max(500).optional(),
@@ -408,5 +425,7 @@ export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;
 export type CreatePayment = z.infer<typeof createPaymentSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
+export type DarajaCredentials = z.infer<typeof darajaCredentialsSchema>;
+export type CredentialSummary = z.infer<typeof credentialSummarySchema>;
 export type UpdatePaymentStatus = z.infer<typeof updatePaymentStatusSchema>;
 export type ReversePayment = z.infer<typeof reversePaymentSchema>;

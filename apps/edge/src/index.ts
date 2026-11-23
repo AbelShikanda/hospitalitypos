@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createDb, migrate, seed } from "@hpos/db";
 import { createEdgeApp } from "./app.js";
+import { processStkTimeouts } from "./payments.js";
 import { processPrintJobs } from "./print.js";
 
 const port = Number(process.env.PORT || 4000);
@@ -22,4 +23,5 @@ serve({ fetch: app.fetch, port }, (info) => {
 
 setInterval(() => {
   void processPrintJobs(db);
+  void processStkTimeouts(db);
 }, 10000).unref();

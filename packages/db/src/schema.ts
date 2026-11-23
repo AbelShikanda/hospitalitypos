@@ -192,6 +192,16 @@ export interface PaymentsTable {
   confirmed_at: Timestamp | null;
 }
 
+export interface PaymentCredentialsTable {
+  id: string;
+  tenant_id: string;
+  provider: string;
+  environment: string;
+  encrypted_config: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface PaymentEventsTable {
   id: string;
   tenant_id: string;
@@ -239,4 +249,5 @@ export interface Database {
   print_jobs: PrintJobsTable;
   payments: PaymentsTable;
   payment_events: PaymentEventsTable;
+  payment_credentials: PaymentCredentialsTable;
 }

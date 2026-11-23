@@ -1,12 +1,19 @@
 import {
   createPaymentSchema,
+  darajaCredentialsSchema,
   reversePaymentSchema,
 } from "@hpos/contracts";
 import type { Db } from "@hpos/db";
 import { assertPaymentTransition, newId, outstandingMinor } from "@hpos/domain";
 import type { Hono } from "hono";
 import { requireAuth, requireRole, type AppEnv } from "./auth.js";
+import {
+  queryStkStatus,
+  stkPush,
+  type DarajaConfig,
+} from "./daraja.js";
 import { loadOrder } from "./orders.js";
+import { decryptSecret, encryptSecret } from "./secret.js";
 
 function toPayment(row: {
   id: string;
@@ -67,6 +74,33 @@ function paymentRef(input: {
   return null;
 }
 
+async function loadDarajaConfig(
+  db: Db,
+  tenantId: string,
+): Promise<DarajaConfig | null> {
+  const row = await db
+    .selectFrom("payment_credentials")
+    .selectAll()
+    .where("tenant_id", "=", tenantId)
+    .where("provider", "=", "daraja")
+    .orderBy("updated_at", "desc")
+    .executeTakeFirst();
+  if (!row) return null;
+
+  try {
+    const parsed = JSON.parse(decryptSecret(row.encrypted_config)) as Omit<
+      DarajaConfig,
+      "environment"
+    >;
+    return {
+      ...parsed,
+      environment: row.environment as DarajaConfig["environment"],
+    };
+  } catch {
+    return null;
+  }
+}
+
 function initialStatus(input: {
   method: string;
   pdq?: { approval_code?: string };
@@ -76,6 +110,86 @@ function initialStatus(input: {
     return "confirmed";
   }
   return "pending";
+}
+
+export async function processStkTimeouts(db: Db): Promise<void> {
+  const rows = await db
+    .selectFrom("payments")
+    .selectAll()
+    .where("status", "=", "pending")
+    .where("method", "=", "mpesa_stk")
+    .where("provider_ref", "is not", null)
+    .execute();
+
+  const cutoff = Date.now() - 2 * 60 * 1000;
+  const stale = rows
+    .filter((payment) => new Date(payment.created_at).getTime() < cutoff)
+    .slice(0, 20);
+  const configs = new Map<string, DarajaConfig | null>();
+
+  for (const payment of stale) {
+    if (!payment.provider_ref) continue;
+    let config = configs.get(payment.tenant_id);
+    if (config === undefined) {
+      config = await loadDarajaConfig(db, payment.tenant_id);
+      configs.set(payment.tenant_id, config);
+    }
+    if (!config) continue;
+
+    try {
+      const result = await queryStkStatus(config, payment.provider_ref);
+      const next = result.resultCode === 0 ? "confirmed" : "failed";
+      const current = await db
+        .selectFrom("payments")
+        .select("status")
+        .where("id", "=", payment.id)
+        .where("tenant_id", "=", payment.tenant_id)
+        .executeTakeFirst();
+      if (current?.status !== "pending") continue;
+
+      const now = new Date().toISOString();
+      const eventKey = `stk-query:${payment.id}`;
+      const existingEvent = await db
+        .selectFrom("payment_events")
+        .select("id")
+        .where("tenant_id", "=", payment.tenant_id)
+        .where("idempotency_key", "=", eventKey)
+        .executeTakeFirst();
+      if (existingEvent) continue;
+
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .updateTable("payments")
+          .set({
+            status: next,
+            confirmed_at: next === "confirmed" ? now : null,
+            updated_at: now,
+          })
+          .where("id", "=", payment.id)
+          .where("tenant_id", "=", payment.tenant_id)
+          .execute();
+        await trx
+          .insertInto("payment_events")
+          .values({
+            id: newId(),
+            tenant_id: payment.tenant_id,
+            payment_id: payment.id,
+            type: next,
+            data: JSON.stringify({
+              from: payment.status,
+              result_code: result.resultCode,
+              result_desc: result.resultDesc,
+            }),
+            actor_user_id: null,
+            idempotency_key: eventKey,
+            created_at: now,
+          })
+          .execute();
+      });
+    } catch {
+      continue;
+    }
+  }
 }
 
 export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
@@ -164,6 +278,94 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
         })
         .execute();
     });
+
+    if (status === "pending" && input.method === "mpesa_stk") {
+      const config = await loadDarajaConfig(db, auth.tenantId);
+      if (!config || !input.mpesa?.phone) {
+        await db
+          .insertInto("payment_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            payment_id: paymentId,
+            type: "provider_not_configured",
+            data: JSON.stringify({ provider: "daraja" }),
+            actor_user_id: auth.userId,
+            idempotency_key: null,
+            created_at: new Date().toISOString(),
+          })
+          .execute();
+      } else {
+        try {
+          const result = await stkPush(config, {
+            phone: input.mpesa.phone,
+            amountMinor: input.amount_minor,
+            orderNumber: order.number,
+          });
+          const current = await db
+            .selectFrom("payments")
+            .select("details")
+            .where("id", "=", paymentId)
+            .where("tenant_id", "=", auth.tenantId)
+            .executeTakeFirstOrThrow();
+          let currentDetails: Record<string, unknown> = {};
+          try {
+            currentDetails = JSON.parse(current.details) as Record<
+              string,
+              unknown
+            >;
+          } catch {
+            currentDetails = {};
+          }
+          await db
+            .updateTable("payments")
+            .set({
+              provider_ref: result.checkoutRequestId,
+              details: JSON.stringify({
+                ...currentDetails,
+                checkout_request_id: result.checkoutRequestId,
+                merchant_request_id: result.merchantRequestId,
+                customer_message: result.customerMessage,
+              }),
+              updated_at: new Date().toISOString(),
+            })
+            .where("id", "=", paymentId)
+            .where("tenant_id", "=", auth.tenantId)
+            .execute();
+          await db
+            .insertInto("payment_events")
+            .values({
+              id: newId(),
+              tenant_id: auth.tenantId,
+              payment_id: paymentId,
+              type: "stk_requested",
+              data: JSON.stringify({
+                checkout_request_id: result.checkoutRequestId,
+              }),
+              actor_user_id: auth.userId,
+              idempotency_key: null,
+              created_at: new Date().toISOString(),
+            })
+            .execute();
+        } catch (error) {
+          await db
+            .insertInto("payment_events")
+            .values({
+              id: newId(),
+              tenant_id: auth.tenantId,
+              payment_id: paymentId,
+              type: "provider_error",
+              data: JSON.stringify({
+                message: error instanceof Error ? error.message : "stk_failed",
+              }),
+              actor_user_id: auth.userId,
+              idempotency_key: null,
+              created_at: new Date().toISOString(),
+            })
+            .execute();
+        }
+      }
+    }
 
     const created = await db
       .selectFrom("payments")
@@ -330,6 +532,155 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
       return context.json({ ...toPayment(payment), status: "reversed" });
     },
   );
+
+  app.put(
+    "/api/payments/credentials/daraja",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
+      const body = await context.req.json().catch(() => null);
+      const parsed = darajaCredentialsSchema.safeParse(body);
+      if (!parsed.success) {
+        return context.json({ error: "invalid_input" }, 400);
+      }
+
+      const auth = context.get("auth");
+      const { environment, ...config } = parsed.data;
+      const encrypted = encryptSecret(JSON.stringify(config));
+      const now = new Date().toISOString();
+      const existing = await db
+        .selectFrom("payment_credentials")
+        .select("id")
+        .where("tenant_id", "=", auth.tenantId)
+        .where("provider", "=", "daraja")
+        .where("environment", "=", environment)
+        .executeTakeFirst();
+
+      const id = existing?.id ?? newId();
+      if (existing) {
+        await db
+          .updateTable("payment_credentials")
+          .set({ encrypted_config: encrypted, updated_at: now })
+          .where("id", "=", id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+      } else {
+        await db
+          .insertInto("payment_credentials")
+          .values({
+            id,
+            tenant_id: auth.tenantId,
+            provider: "daraja",
+            environment,
+            encrypted_config: encrypted,
+            created_at: now,
+            updated_at: now,
+          })
+          .execute();
+      }
+
+      return context.json({
+        id,
+        provider: "daraja",
+        environment,
+        created_at: existing ? undefined : now,
+        updated_at: now,
+      });
+    },
+  );
+
+  app.get("/api/payments/credentials", requireAuth(db), async (context) => {
+    const auth = context.get("auth");
+    const rows = await db
+      .selectFrom("payment_credentials")
+      .select(["id", "provider", "environment", "created_at", "updated_at"])
+      .where("tenant_id", "=", auth.tenantId)
+      .orderBy("updated_at", "desc")
+      .execute();
+    return context.json(rows);
+  });
+
+  app.post("/api/payments/mpesa/callback", async (context) => {
+    const body = (await context.req.json().catch(() => null)) as {
+      Body?: { stkCallback?: Record<string, unknown> };
+    } | null;
+    const callback = body?.Body?.stkCallback;
+    if (!callback || typeof callback.CheckoutRequestID !== "string") {
+      return context.json({ error: "invalid_callback" }, 400);
+    }
+
+    const checkoutId = callback.CheckoutRequestID;
+    const resultCode = Number(callback.ResultCode ?? -1);
+    const transactionId =
+      typeof callback.TransactionID === "string"
+        ? callback.TransactionID
+        : checkoutId;
+
+    const payment = await db
+      .selectFrom("payments")
+      .selectAll()
+      .where((expression) =>
+        expression.or([
+          expression("provider_ref", "=", checkoutId),
+          expression("details", "like", `%${checkoutId}%`),
+        ]),
+      )
+      .where("method", "=", "mpesa_stk")
+      .executeTakeFirst();
+    if (!payment) return context.json({ error: "unknown_checkout" }, 404);
+
+    const eventKey = `mpesa:${checkoutId}:${resultCode}:${transactionId}`;
+    const existingEvent = await db
+      .selectFrom("payment_events")
+      .select("id")
+      .where("tenant_id", "=", payment.tenant_id)
+      .where("idempotency_key", "=", eventKey)
+      .executeTakeFirst();
+    if (existingEvent) return context.json({ received: true, duplicate: true });
+
+    const next = resultCode === 0 ? "confirmed" : "failed";
+    if (payment.status !== "pending") {
+      return context.json({ received: true, ignored: true });
+    }
+
+    const now = new Date().toISOString();
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable("payments")
+        .set({
+          status: next,
+          confirmed_at: next === "confirmed" ? now : null,
+          updated_at: now,
+          provider_ref:
+            next === "confirmed" && transactionId !== checkoutId
+              ? transactionId
+              : payment.provider_ref,
+        })
+        .where("id", "=", payment.id)
+        .where("tenant_id", "=", payment.tenant_id)
+        .execute();
+
+      await trx
+        .insertInto("payment_events")
+        .values({
+          id: newId(),
+          tenant_id: payment.tenant_id,
+          payment_id: payment.id,
+          type: next,
+          data: JSON.stringify({
+            from: payment.status,
+            result_code: resultCode,
+            result_desc: callback.ResultDesc ?? null,
+          }),
+          actor_user_id: null,
+          idempotency_key: eventKey,
+          created_at: now,
+        })
+        .execute();
+    });
+
+    return context.json({ received: true });
+  });
 
   app.get("/api/payments/reconciliation", requireAuth(db), async (context) => {
     const auth = context.get("auth");

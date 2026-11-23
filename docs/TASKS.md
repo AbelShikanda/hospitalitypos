@@ -133,8 +133,8 @@ payment; all reconcile in reports; all idempotent.
 - [x] Payment state machine (pending/confirmed/failed/reversed) in `domain`.
 - [x] Cash payment + change calculation.
 - [x] Manual M-Pesa reference capture (works offline at venue).
-- [ ] Daraja integration: OAuth, STK Push, callback validation, retries, timeouts.
-- [ ] Per-tenant Daraja credentials, encrypted at rest, server-only.
+- [x] Daraja integration: OAuth, STK Push, callback validation, query/timeouts.
+- [x] Per-tenant Daraja credentials, encrypted at rest, server-only.
 - [ ] PDQ integrated/semi-integrated bridge (standalone capture ships first;
       vendor TBD — see Open decisions).
 - [x] PDQ standalone capture: terminal ID, approval code, RRN/STAN, card brand,

@@ -1171,6 +1171,95 @@ describe("menu, floor and orders", () => {
     });
   });
 
+  it("confirms an STK payment from an idempotent Daraja callback", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const payment = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "mpesa_stk",
+        amount_minor: 50000,
+        idempotency_key: "stk-payment-001",
+        mpesa: { phone: "0712345678" },
+      }),
+    });
+    expect(payment.status).toBe(201);
+    const stkPayment = (await payment.json()) as { id: string; status: string };
+    expect(stkPayment.status).toBe("pending");
+
+    await db
+      .updateTable("payments")
+      .set({
+        provider_ref: "ws_CO_test",
+        details: JSON.stringify({ checkout_request_id: "ws_CO_test" }),
+      })
+      .where("id", "=", stkPayment.id)
+      .execute();
+
+    const callbackBody = {
+      Body: {
+        stkCallback: {
+          CheckoutRequestID: "ws_CO_test",
+          ResultCode: 0,
+          ResultDesc: "Success",
+          TransactionID: "MPESA123",
+        },
+      },
+    };
+    const callback = await app.request("/api/payments/mpesa/callback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(callbackBody),
+    });
+    expect(callback.status).toBe(200);
+
+    const after = await app.request(`/api/payments?order_id=${order.id}`, {
+      headers: { cookie },
+    });
+    const rows = (await after.json()) as Array<{
+      id: string;
+      status: string;
+      provider_ref: string;
+    }>;
+    expect(rows[0]).toMatchObject({
+      id: stkPayment.id,
+      status: "confirmed",
+      provider_ref: "MPESA123",
+    });
+
+    const replay = await app.request("/api/payments/mpesa/callback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(callbackBody),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ duplicate: true });
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

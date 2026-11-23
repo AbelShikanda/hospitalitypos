@@ -536,6 +536,34 @@ const payments: Migration = {
   },
 };
 
+const paymentCredentials: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("payment_credentials")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("provider", "varchar(20)", (column) => column.notNull())
+      .addColumn("environment", "varchar(20)", (column) => column.notNull())
+      .addColumn("encrypted_config", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("payment_credentials_uidx")
+      .ifNotExists()
+      .on("payment_credentials")
+      .columns(["tenant_id", "provider", "environment"])
+      .unique()
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("payment_credentials").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -545,6 +573,7 @@ const migrations: Record<string, Migration> = {
   "006_order_courses": orderCourses,
   "007_print_jobs": printJobs,
   "008_payments": payments,
+  "009_payment_credentials": paymentCredentials,
 };
 
 export const migrationProvider: MigrationProvider = {

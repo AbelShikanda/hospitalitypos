@@ -94,4 +94,5 @@ locally with automatic retry. Phase 2 billing is in progress: VAT-inclusive
 discount/tip math, splits, void reasons, 80mm receipts, a retryable print queue
 and drawer kick are in place. Phase 3 adds idempotent cash, manual M-Pesa and
 PDQ standalone capture with confirmation, reversal and reconciliation. Daraja
-STK, integrated PDQ and KDS routing remain queued in `docs/TASKS.md`.
+STK Push with encrypted per-tenant credentials and callback confirmation is in
+place. Integrated PDQ and KDS routing remain queued in `docs/TASKS.md`.

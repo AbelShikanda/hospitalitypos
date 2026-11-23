@@ -754,6 +754,30 @@ integrated PDQ remain online-only additions behind the same model.
 
 ---
 
+## ADR-028 — Daraja credentials are encrypted per tenant
+
+**Status:** Accepted
+
+**Context:** STK Push needs consumer keys/secrets, a shortcode and a passkey.
+These differ per tenant and must never reach the browser or logs.
+
+**Decision:**
+
+- Credentials are stored in `payment_credentials` as AES-256-GCM ciphertext.
+  The key comes from `POS_SECRET_KEY`; without it a process-local random key is
+  used for development.
+- Only metadata (provider, environment, timestamps) is returned by the API.
+- STK attempts start `pending`; a validated callback confirms or fails them by
+  `CheckoutRequestID`. Unknown callbacks are rejected.
+- Pending STK attempts older than two minutes are queried on an interval, with
+  idempotent events so a late callback cannot double-confirm.
+
+**Consequences:** A missing or wrong `POS_SECRET_KEY` makes saved credentials
+unreadable after restart; production deployments must set it. Callbacks remain
+tenant-scoped through the payment attempt rather than a client-supplied tenant.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/
