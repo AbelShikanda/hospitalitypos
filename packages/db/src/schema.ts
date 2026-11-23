@@ -187,6 +187,94 @@ export interface OrderEventsTable {
   created_at: Timestamp;
 }
 
+export interface OutboxEventsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  entity: string;
+  entity_id: string;
+  op: string;
+  payload: string;
+  idempotency_key: string;
+  created_at: Timestamp;
+  synced_at: Timestamp | null;
+  attempts: number;
+}
+
+export interface InboxMessagesTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string | null;
+  entity: string;
+  entity_id: string;
+  op: string;
+  payload: string;
+  idempotency_key: string;
+  created_at: Timestamp;
+  applied_at: Timestamp | null;
+}
+
+export interface SyncCursorsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  last_outbox_at: Timestamp | null;
+  last_inbox_at: Timestamp | null;
+  updated_at: Timestamp;
+}
+
+export interface HeartbeatsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  version: string;
+  schema_version: number;
+  status: string;
+  last_seen_at: Timestamp;
+}
+
+export interface CloudJobsTable {
+  id: string;
+  tenant_id: string;
+  type: string;
+  payload: string;
+  status: string;
+  attempts: number;
+  run_at: Timestamp;
+  error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ApiTokensTable {
+  id: string;
+  tenant_id: string;
+  name: string;
+  token_hash: string;
+  created_at: Timestamp;
+  revoked_at: Timestamp | null;
+}
+
+export interface SubscriptionsTable {
+  id: string;
+  tenant_id: string;
+  plan: string;
+  status: string;
+  trial_ends_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface CloudBackupsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  location: string;
+  checksum: string;
+  size_bytes: number;
+  created_at: Timestamp;
+}
+
 export interface StockItemsTable {
   id: string;
   tenant_id: string;
@@ -333,4 +421,12 @@ export interface Database {
   recipes: RecipesTable;
   stock_movements: StockMovementsTable;
   suppliers: SuppliersTable;
+  outbox_events: OutboxEventsTable;
+  inbox_messages: InboxMessagesTable;
+  sync_cursors: SyncCursorsTable;
+  heartbeats: HeartbeatsTable;
+  cloud_jobs: CloudJobsTable;
+  api_tokens: ApiTokensTable;
+  subscriptions: SubscriptionsTable;
+  cloud_backups: CloudBackupsTable;
 }

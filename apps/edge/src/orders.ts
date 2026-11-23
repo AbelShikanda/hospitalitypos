@@ -21,6 +21,7 @@ import { requireAuth, requireRole, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
 import { publishEvent } from "./events.js";
 import { depleteStockForOrder, reverseStockForOrder } from "./stock.js";
+import { recordOutbox } from "./sync.js";
 
 export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   const order = await db
@@ -541,7 +542,20 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const result = await loadOrder(db, auth.tenantId, orderId);
-    if (result) emitOrderEvent("order_created", result);
+    if (result) {
+      emitOrderEvent("order_created", result);
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: venue.id,
+        entity: "order",
+        entityId: result.id,
+        op: "created",
+        payload: result,
+        idempotencyKey: input.idempotency_key
+          ? `order:${input.idempotency_key}`
+          : undefined,
+      });
+    }
     return context.json(result, 201);
   });
 
@@ -735,7 +749,20 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const result = await loadOrder(db, auth.tenantId, order.id);
-    if (result) emitOrderEvent("items_added", result);
+    if (result) {
+      emitOrderEvent("items_added", result);
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: order.venue_id,
+        entity: "order",
+        entityId: order.id,
+        op: "items_added",
+        payload: result,
+        idempotencyKey: input.idempotency_key
+          ? `append:${input.idempotency_key}`
+          : undefined,
+      });
+    }
     return context.json(result, 201);
   });
 
@@ -841,7 +868,17 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     });
 
     const result = await loadOrder(db, auth.tenantId, order.id);
-    if (result) emitOrderEvent("order_sent", result);
+    if (result) {
+      emitOrderEvent("order_sent", result);
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: order.venue_id,
+        entity: "order",
+        entityId: order.id,
+        op: "sent",
+        payload: result,
+      });
+    }
     return context.json(result);
   });
 
@@ -1285,7 +1322,17 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     });
 
     const result = await loadOrder(db, auth.tenantId, order.id);
-    if (result) emitOrderEvent(`order_${next}`, result);
+    if (result) {
+      emitOrderEvent(`order_${next}`, result);
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: order.venue_id,
+        entity: "order",
+        entityId: order.id,
+        op: `status_${next}`,
+        payload: result,
+      });
+    }
     return context.json(result);
   });
 }

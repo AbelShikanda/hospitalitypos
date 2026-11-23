@@ -770,6 +770,178 @@ const paymentTips: Migration = {
   },
 };
 
+const cloudSync: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("outbox_events")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("entity", "varchar(40)", (column) => column.notNull())
+      .addColumn("entity_id", "char(26)", (column) => column.notNull())
+      .addColumn("op", "varchar(20)", (column) => column.notNull())
+      .addColumn("payload", "text", (column) => column.notNull())
+      .addColumn("idempotency_key", "varchar(128)", (column) => column.notNull())
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("synced_at", "timestamp")
+      .addColumn("attempts", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+
+    await db.schema
+      .createTable("inbox_messages")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)")
+      .addColumn("entity", "varchar(40)", (column) => column.notNull())
+      .addColumn("entity_id", "char(26)", (column) => column.notNull())
+      .addColumn("op", "varchar(20)", (column) => column.notNull())
+      .addColumn("payload", "text", (column) => column.notNull())
+      .addColumn("idempotency_key", "varchar(128)", (column) => column.notNull())
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("applied_at", "timestamp")
+      .execute();
+
+    await db.schema
+      .createTable("sync_cursors")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("last_outbox_at", "timestamp")
+      .addColumn("last_inbox_at", "timestamp")
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("heartbeats")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("version", "varchar(40)", (column) => column.notNull())
+      .addColumn("schema_version", "integer", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) => column.notNull())
+      .addColumn("last_seen_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("cloud_jobs")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("type", "varchar(40)", (column) => column.notNull())
+      .addColumn("payload", "text", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) =>
+        column.notNull().defaultTo("queued"),
+      )
+      .addColumn("attempts", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("run_at", "timestamp", (column) => column.notNull())
+      .addColumn("error", "text")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("api_tokens")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("name", "varchar(120)", (column) => column.notNull())
+      .addColumn("token_hash", "varchar(64)", (column) => column.notNull())
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("revoked_at", "timestamp")
+      .execute();
+
+    await db.schema
+      .createTable("subscriptions")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("plan", "varchar(40)", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) => column.notNull())
+      .addColumn("trial_ends_at", "timestamp")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("cloud_backups")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("location", "varchar(255)", (column) => column.notNull())
+      .addColumn("checksum", "varchar(128)", (column) => column.notNull())
+      .addColumn("size_bytes", "integer", (column) => column.notNull())
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("outbox_events_tenant_synced_idx")
+      .ifNotExists()
+      .on("outbox_events")
+      .columns(["tenant_id", "synced_at", "created_at"])
+      .execute();
+    await db.schema
+      .createIndex("outbox_events_idempotency_uidx")
+      .ifNotExists()
+      .on("outbox_events")
+      .columns(["tenant_id", "idempotency_key"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("inbox_messages_idempotency_uidx")
+      .ifNotExists()
+      .on("inbox_messages")
+      .columns(["tenant_id", "idempotency_key"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("sync_cursors_uidx")
+      .ifNotExists()
+      .on("sync_cursors")
+      .columns(["tenant_id", "venue_id"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("heartbeats_tenant_venue_idx")
+      .ifNotExists()
+      .on("heartbeats")
+      .columns(["tenant_id", "venue_id"])
+      .execute();
+    await db.schema
+      .createIndex("cloud_jobs_status_idx")
+      .ifNotExists()
+      .on("cloud_jobs")
+      .columns(["status", "run_at"])
+      .execute();
+    await db.schema
+      .createIndex("api_tokens_hash_uidx")
+      .ifNotExists()
+      .on("api_tokens")
+      .columns(["token_hash"])
+      .unique()
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("api_tokens").ifExists().execute();
+    await db.schema.dropTable("cloud_jobs").ifExists().execute();
+    await db.schema.dropTable("heartbeats").ifExists().execute();
+    await db.schema.dropTable("sync_cursors").ifExists().execute();
+    await db.schema.dropTable("inbox_messages").ifExists().execute();
+    await db.schema.dropTable("outbox_events").ifExists().execute();
+    await db.schema.dropTable("subscriptions").ifExists().execute();
+    await db.schema.dropTable("cloud_backups").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -784,6 +956,7 @@ const migrations: Record<string, Migration> = {
   "011_shifts_discounts": shiftsAndDiscounts,
   "012_inventory": inventory,
   "013_payment_tips": paymentTips,
+  "014_cloud_sync": cloudSync,
 };
 
 export const migrationProvider: MigrationProvider = {

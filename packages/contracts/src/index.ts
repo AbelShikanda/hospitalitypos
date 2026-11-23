@@ -2,6 +2,14 @@ import { z } from "zod";
 
 export const ulid = z.string().length(26);
 
+export const courseSchema = z.enum([
+  "starter",
+  "main",
+  "dessert",
+  "drink",
+  "other",
+]);
+
 export const printReceiptSchema = z.object({
   order_id: ulid,
   discount_percent: z.number().min(0).max(100).default(0),
@@ -19,6 +27,56 @@ export const printJobSchema = z.object({
   error: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+});
+
+export const outboxEventSchema = z.object({
+  id: ulid,
+  tenant_id: ulid,
+  venue_id: ulid,
+  entity: z.string().min(1).max(40),
+  entity_id: ulid,
+  op: z.string().min(1).max(20),
+  payload: z.string(),
+  idempotency_key: z.string().min(8).max(128),
+  created_at: z.string(),
+});
+
+export const syncPushSchema = z.object({
+  events: z.array(outboxEventSchema).max(200),
+});
+
+export const heartbeatSchema = z.object({
+  venue_id: ulid,
+  version: z.string().min(1).max(40),
+  schema_version: z.number().int().positive(),
+  status: z.enum(["online", "degraded", "offline"]).default("online"),
+});
+
+export const publishCatalogSchema = z.object({
+  venue_id: ulid,
+  categories: z.array(
+    z.object({
+      id: ulid,
+      name: z.string().min(1),
+      sort_order: z.number().int().default(0),
+    }),
+  ),
+  items: z.array(
+    z.object({
+      id: ulid,
+      category_id: ulid,
+      name: z.string().min(1),
+      description: z.string().nullable().optional(),
+      price_minor: z.number().int().nonnegative(),
+      tax_rate: z.number().int().nonnegative().default(16),
+      course: courseSchema.default("main"),
+      is_available: z.boolean().default(true),
+    }),
+  ),
+});
+
+export const createApiTokenSchema = z.object({
+  name: z.string().min(1).max(120),
 });
 
 export const healthSchema = z.object({
@@ -265,14 +323,6 @@ export const sessionSchema = z.object({
   expires_at: z.string(),
 });
 
-export const courseSchema = z.enum([
-  "starter",
-  "main",
-  "dessert",
-  "drink",
-  "other",
-]);
-
 export const stationSchema = z.object({
   id: ulid,
   name: z.string().min(1),
@@ -469,6 +519,11 @@ export type PrintReceipt = z.infer<typeof printReceiptSchema>;
 export type PrintJob = z.infer<typeof printJobSchema>;
 export type Station = z.infer<typeof stationSchema>;
 export type CreateStation = z.infer<typeof createStationSchema>;
+export type OutboxEvent = z.infer<typeof outboxEventSchema>;
+export type SyncPush = z.infer<typeof syncPushSchema>;
+export type Heartbeat = z.infer<typeof heartbeatSchema>;
+export type PublishCatalog = z.infer<typeof publishCatalogSchema>;
+export type CreateApiToken = z.infer<typeof createApiTokenSchema>;
 export type Health = z.infer<typeof healthSchema>;
 export type Version = z.infer<typeof versionSchema>;
 export type Tenant = z.infer<typeof tenantSchema>;

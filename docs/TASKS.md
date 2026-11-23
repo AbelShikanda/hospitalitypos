@@ -205,15 +205,15 @@ runs edge-only at zero cloud cost.
 admin can onboard a tenant end-to-end; sync verified on **both** Postgres and
 MySQL/MariaDB.
 
-- [ ] Sync worker: outbox push, inbox pull, cursors, idempotent apply.
-- [ ] Conflict rules per entity (documented and tested).
-- [ ] Cloud tenant/venue management + catalog publishing to edge.
-- [ ] Aggregated cloud reporting.
+- [x] Sync worker: outbox push, inbox pull, cursors, idempotent apply.
+- [x] Conflict rules per entity (documented and tested).
+- [x] Cloud tenant/venue management + catalog publishing to edge.
+- [x] Aggregated cloud reporting.
 - [ ] Encrypted backup upload on reconnect; restore runbook.
-- [ ] Heartbeat/health telemetry.
-- [ ] DB-backed job queue + cron-triggered worker (no Redis/WebSockets in cloud).
+- [x] Heartbeat/health telemetry.
+- [x] DB-backed job queue + cron-triggered worker (no Redis/WebSockets in cloud).
 - [ ] Deploy cloud on VPS via Docker; SSL via Let's Encrypt; verify DB engine.
-- [ ] Tenant subscription plans/trials (P2 depth).
+- [x] Tenant subscription plans/trials (P2 depth).
 
 ---
 

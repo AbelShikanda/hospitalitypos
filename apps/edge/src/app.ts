@@ -31,6 +31,7 @@ import { registerPrintRoutes } from "./print.js";
 import { registerReportRoutes } from "./reports.js";
 import { registerShiftRoutes } from "./shifts.js";
 import { registerStockRoutes } from "./stock.js";
+import { registerEdgeSyncRoutes } from "./sync.js";
 
 export interface EdgeAppOptions {
   db: Db;
@@ -69,7 +70,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 13, build }),
+    context.json({ app: version, edge: version, schema: 14, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -243,6 +244,7 @@ export function createEdgeApp({
   registerShiftRoutes(app, db);
   registerStockRoutes(app, db);
   registerReportRoutes(app, db);
+  registerEdgeSyncRoutes(app, db);
 
   if (webDist !== null) {
     const dist =

@@ -14,6 +14,7 @@ import {
 } from "./daraja.js";
 import { loadOrder } from "./orders.js";
 import { decryptSecret, encryptSecret } from "./secret.js";
+import { recordOutbox } from "./sync.js";
 
 function toPayment(row: {
   id: string;
@@ -376,6 +377,15 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
       .where("id", "=", paymentId)
       .where("tenant_id", "=", auth.tenantId)
       .executeTakeFirstOrThrow();
+    await recordOutbox(db, {
+      tenantId: auth.tenantId,
+      venueId: created.venue_id,
+      entity: "payment",
+      entityId: created.id,
+      op: "created",
+      payload: toPayment(created),
+      idempotencyKey: `payment:${input.idempotency_key}`,
+    });
     return context.json(toPayment(created), 201);
   });
 
@@ -435,6 +445,14 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
           })
           .execute();
       });
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: payment.venue_id,
+        entity: "payment",
+        entityId: payment.id,
+        op: "confirmed",
+        payload: { ...toPayment(payment), status: "confirmed" },
+      });
       return context.json({
         ...toPayment(payment),
         status: "confirmed",
@@ -480,6 +498,14 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
           created_at: now,
         })
         .execute();
+    });
+    await recordOutbox(db, {
+      tenantId: auth.tenantId,
+      venueId: payment.venue_id,
+      entity: "payment",
+      entityId: payment.id,
+      op: "cancelled",
+      payload: { ...toPayment(payment), status: "cancelled" },
     });
     return context.json({ ...toPayment(payment), status: "cancelled" });
   });
@@ -531,6 +557,14 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
             created_at: now,
           })
           .execute();
+      });
+      await recordOutbox(db, {
+        tenantId: auth.tenantId,
+        venueId: payment.venue_id,
+        entity: "payment",
+        entityId: payment.id,
+        op: "reversed",
+        payload: { ...toPayment(payment), status: "reversed" },
       });
       return context.json({ ...toPayment(payment), status: "reversed" });
     },

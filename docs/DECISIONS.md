@@ -870,6 +870,35 @@ rebuild job. Per-tenant aggregation is deferred to the cloud control plane.
 
 ---
 
+## ADR-033 — Sync uses idempotent event replay with explicit cursors
+
+**Status:** Accepted
+
+**Context:** Edge nodes must sync order and payment history to a cloud control
+plane that is optional, may be unavailable for days, and must never double-apply
+an event.
+
+**Decision:**
+
+- Every material mutation writes an `outbox_events` row with a tenant-unique
+  idempotency key. The edge worker pushes pending rows to the cloud and marks
+  them synced only after success.
+- The cloud stores inbound events in `inbox_messages`, keyed by the same
+  idempotency key, and enqueues `cloud_jobs` for application. No Redis or
+  WebSocket is required; `/internal/cron/run` drains the queue.
+- Pull uses `sync_cursors` timestamps; edge catalog messages are applied
+  idempotently to local menu tables.
+- Conflict rules: idempotency wins first; for duplicate entity IDs the newest
+  `created_at` wins for catalog/config. Financial order and payment records are
+  never overwritten by a cloud pull — the edge remains source of truth.
+- Bearer API tokens are hashed with SHA-256; raw tokens are shown once.
+
+**Consequences:** A lost response cannot duplicate money events. The cloud can
+aggregate synced events without accepting writes from the cloud back into the
+edge ledger. Backup uploads and SSL deployment remain separate rollout steps.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

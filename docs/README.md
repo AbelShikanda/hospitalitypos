@@ -44,8 +44,8 @@ humans and AI coding agents.
 
 ## Status
 
-Project is at **Phase 7 — Reports and analytics** (with Phase 0b distribution
-tracked alongside it). The web, edge and cloud apps run locally;
+Project is at **Phase 8 — Cloud sync and SaaS control plane** (with Phase 0b
+distribution tracked alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
 send-to-kitchen work end to end on the local edge. Order mutations are
@@ -60,4 +60,6 @@ tickets and supports reprints. Phase 5 adds role-gated discounts/voids,
 clock-in/out, per-staff sales, Z-reports and CSV export. Phase 6 adds
 recipe-based stock depletion, low-stock alerts, counts and suppliers. Phase 7
 adds derived sales, payment, item, staff and VAT reports with date filters and
-CSV export. Integrated PDQ remains queued. See `TASKS.md` for the live checklist.
+CSV export. Phase 8 adds edge→cloud sync with idempotent events, cursors,
+heartbeats, catalog publishing and cloud aggregates. Integrated PDQ and
+encrypted backups remain queued. See `TASKS.md` for the live checklist.
