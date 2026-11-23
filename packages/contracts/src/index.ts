@@ -127,6 +127,15 @@ export const createPaymentSchema = z
     }
   });
 
+export const updatePaymentStatusSchema = z.object({
+  status: z.enum(["confirmed", "cancelled"]),
+  reason: z.string().max(500).optional(),
+});
+
+export const reversePaymentSchema = z.object({
+  reason: z.string().min(3).max(500),
+});
+
 export const paymentSchema = z.object({
   id: ulid,
   tenant_id: ulid,
@@ -399,3 +408,5 @@ export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;
 export type CreatePayment = z.infer<typeof createPaymentSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
+export type UpdatePaymentStatus = z.infer<typeof updatePaymentStatusSchema>;
+export type ReversePayment = z.infer<typeof reversePaymentSchema>;

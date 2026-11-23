@@ -131,16 +131,16 @@ all with the internet unplugged.
 payment; all reconcile in reports; all idempotent.
 
 - [x] Payment state machine (pending/confirmed/failed/reversed) in `domain`.
-- [ ] Cash payment + change calculation.
-- [ ] Manual M-Pesa reference capture (works offline at venue).
+- [x] Cash payment + change calculation.
+- [x] Manual M-Pesa reference capture (works offline at venue).
 - [ ] Daraja integration: OAuth, STK Push, callback validation, retries, timeouts.
 - [ ] Per-tenant Daraja credentials, encrypted at rest, server-only.
-- [ ] PDQ card terminal via edge device bridge (integrated/semi-integrated/
-      standalone; vendor TBD — see Open decisions).
-- [ ] PDQ capture: terminal ID, approval code, RRN/STAN, card brand, last4;
-      reconcile against the terminal/bank settlement.
-- [ ] Payment audit trail + provider refs.
-- [ ] Reconciliation report: expected vs captured vs pending.
+- [ ] PDQ integrated/semi-integrated bridge (standalone capture ships first;
+      vendor TBD — see Open decisions).
+- [x] PDQ standalone capture: terminal ID, approval code, RRN/STAN, card brand,
+      last4; reconcile against the terminal/bank settlement.
+- [x] Payment audit trail + provider refs.
+- [x] Reconciliation report: expected vs captured vs pending.
 
 ---
 

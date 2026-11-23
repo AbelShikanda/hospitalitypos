@@ -728,6 +728,32 @@ item/seat splits remain open for the KDS milestone.
 
 ---
 
+## ADR-027 — Payments are append-only attempts with idempotent transitions
+
+**Status:** Accepted
+
+**Context:** Cash, M-Pesa references and PDQ approvals are recorded on a venue
+LAN that may lose connectivity. A retry must not charge twice or overwrite
+money history.
+
+**Decision:**
+
+- Each attempt is an append-only `payments` row with a tenant-unique
+  idempotency key; transitions are separate `payment_events` rows.
+- Cash confirms immediately. Manual M-Pesa and PDQ standalone start `pending`
+  and are confirmed by an owner/manager. A PDQ attempt with an approval code
+  records that reference without storing card data.
+- Reversals are new events with a required reason; confirmed attempts are never
+  edited or deleted.
+- Outstanding is derived from confirmed payments only. Reconciliation groups
+  attempts by method into expected, captured, pending and reversed totals.
+- The PWA queues payment writes through the same outbox as orders.
+
+**Consequences:** Money history is auditable and retry-safe. Daraja STK and
+integrated PDQ remain online-only additions behind the same model.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

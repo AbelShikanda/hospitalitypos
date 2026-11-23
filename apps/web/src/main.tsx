@@ -4,6 +4,7 @@ import {
   billTotals,
   formatReceiptText,
   newId,
+  outstandingMinor,
   splitBill,
   toMinor,
 } from "@hpos/domain";
@@ -134,6 +135,26 @@ type PrintJobSummary = {
   attempts: number;
   error: string | null;
   created_at: string;
+};
+
+type Payment = {
+  id: string;
+  order_id: string;
+  method: string;
+  status: string;
+  amount_minor: number;
+  provider_ref: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+
+type ReconciliationRow = {
+  method: string;
+  attempts: number;
+  expected_minor: number;
+  captured_minor: number;
+  pending_minor: number;
+  reversed_minor: number;
 };
 
 type Order = {
@@ -1399,6 +1420,15 @@ function BillView({
   const [tipMajor, setTipMajor] = useState("0");
   const [splitCount, setSplitCount] = useState(1);
   const [voidReason, setVoidReason] = useState("");
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [report, setReport] = useState<ReconciliationRow[]>([]);
+  const [payMethod, setPayMethod] = useState("cash");
+  const [payAmount, setPayAmount] = useState("0");
+  const [mpesaRef, setMpesaRef] = useState("");
+  const [mpesaPhone, setMpesaPhone] = useState("");
+  const [pdqMode, setPdqMode] = useState("standalone");
+  const [approvalCode, setApprovalCode] = useState("");
+  const [reverseReason, setReverseReason] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -1406,19 +1436,34 @@ function BillView({
     let cancelled = false;
     async function load() {
       try {
-        const [ordersResponse, jobsResponse] = await Promise.all([
-          fetch(`/api/orders?venue_id=${encodeURIComponent(venueId)}`, {
-            credentials: "same-origin",
-          }),
-          fetch(`/api/print/jobs?venue_id=${encodeURIComponent(venueId)}`, {
-            credentials: "same-origin",
-          }),
-        ]);
-        if (!ordersResponse.ok || !jobsResponse.ok) {
+        const [ordersResponse, jobsResponse, paymentsResponse, reportResponse] =
+          await Promise.all([
+            fetch(`/api/orders?venue_id=${encodeURIComponent(venueId)}`, {
+              credentials: "same-origin",
+            }),
+            fetch(`/api/print/jobs?venue_id=${encodeURIComponent(venueId)}`, {
+              credentials: "same-origin",
+            }),
+            fetch(`/api/payments?venue_id=${encodeURIComponent(venueId)}`, {
+              credentials: "same-origin",
+            }),
+            fetch(
+              `/api/payments/reconciliation?venue_id=${encodeURIComponent(venueId)}`,
+              { credentials: "same-origin" },
+            ),
+          ]);
+        if (
+          !ordersResponse.ok ||
+          !jobsResponse.ok ||
+          !paymentsResponse.ok ||
+          !reportResponse.ok
+        ) {
           throw new Error("billing load failed");
         }
         const data = (await ordersResponse.json()) as OrderSummary[];
         const printJobs = (await jobsResponse.json()) as PrintJobSummary[];
+        const paymentRows = (await paymentsResponse.json()) as Payment[];
+        const reportRows = (await reportResponse.json()) as ReconciliationRow[];
         if (cancelled) return;
         setOrders(
           data.filter(
@@ -1426,6 +1471,8 @@ function BillView({
           ),
         );
         setJobs(printJobs);
+        setPayments(paymentRows);
+        setReport(reportRows);
       } catch {
         if (!cancelled) setError("Could not load open bills.");
       }
@@ -1475,6 +1522,24 @@ function BillView({
       },
     );
   }, [order, discountPercent, tipMajor]);
+
+  const orderPayments = useMemo(
+    () => payments.filter((payment) => payment.order_id === order?.id),
+    [payments, order?.id],
+  );
+  const outstanding = order
+    ? outstandingMinor(
+        order.total_minor,
+        orderPayments.map((payment) => ({
+          status: payment.status as "confirmed" | "pending" | "reversed",
+          amount_minor: payment.amount_minor,
+        })),
+      )
+    : 0;
+
+  useEffect(() => {
+    if (order) setPayAmount((outstanding / 100).toFixed(2));
+  }, [order?.id, outstanding]);
 
   const receiptText = useMemo(() => {
     if (!order || !bill) return "";
@@ -1527,6 +1592,67 @@ function BillView({
     });
     setNotice(`${order.number} void queued.`);
     setVoidReason("");
+  }
+
+  function recordPayment() {
+    if (!order) return;
+    const amountMinor = toMinor(Number(payAmount) || 0);
+    if (amountMinor <= 0) {
+      setError("Enter a payment amount.");
+      return;
+    }
+    if (payMethod === "mpesa_manual" && mpesaRef.trim().length < 6) {
+      setError("Enter the M-Pesa receipt code.");
+      return;
+    }
+    if (payMethod === "mpesa_stk" && mpesaPhone.trim().length < 9) {
+      setError("Enter the customer's M-Pesa phone.");
+      return;
+    }
+    if (payMethod === "pdq_card" && approvalCode.trim().length < 3) {
+      setError("Enter the PDQ approval code or RRN.");
+      return;
+    }
+
+    const body: Record<string, unknown> = {
+      order_id: order.id,
+      method: payMethod,
+      amount_minor: amountMinor,
+      idempotency_key: crypto.randomUUID(),
+    };
+    if (payMethod === "mpesa_manual") {
+      body.mpesa = { reference: mpesaRef.trim() };
+    }
+    if (payMethod === "mpesa_stk") {
+      body.mpesa = { phone: mpesaPhone.trim() };
+    }
+    if (payMethod === "pdq_card") {
+      body.pdq = {
+        mode: pdqMode,
+        approval_code: approvalCode.trim(),
+      };
+    }
+
+    enqueueOutbox({ url: "/api/payments", body });
+    setNotice("Payment queued.");
+    setMpesaRef("");
+    setMpesaPhone("");
+    setApprovalCode("");
+    setError("");
+  }
+
+  function updatePayment(payment: Payment, action: "confirmed" | "cancelled" | "reversed") {
+    const url =
+      action === "reversed"
+        ? `/api/payments/${payment.id}/reverse`
+        : `/api/payments/${payment.id}/${action}`;
+    const body =
+      action === "reversed"
+        ? { reason: reverseReason.trim() }
+        : { status: action };
+    enqueueOutbox({ url, body });
+    setNotice(`${action} queued.`);
+    if (action === "reversed") setReverseReason("");
   }
 
   const splits = bill ? splitBill(bill.payableMinor, Math.max(1, splitCount)) : [];
@@ -1638,6 +1764,154 @@ function BillView({
                 </div>
               ))}
             </div>
+            <div className="payment-section">
+              <div className="cart-section-label">
+                <span>Payment</span>
+                <strong>{money(outstanding)} outstanding</strong>
+              </div>
+              <div className="payment-form">
+                <label>
+                  <span>Method</span>
+                  <select
+                    value={payMethod}
+                    onChange={(event) => setPayMethod(event.target.value)}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="mpesa_manual">M-Pesa manual</option>
+                    <option value="mpesa_stk">M-Pesa STK</option>
+                    <option value="pdq_card">PDQ card</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Amount (KES)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={payAmount}
+                    onChange={(event) => setPayAmount(event.target.value)}
+                  />
+                </label>
+                {payMethod === "mpesa_manual" ? (
+                  <label>
+                    <span>Receipt code</span>
+                    <input
+                      value={mpesaRef}
+                      onChange={(event) => setMpesaRef(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                {payMethod === "mpesa_stk" ? (
+                  <label>
+                    <span>Phone</span>
+                    <input
+                      value={mpesaPhone}
+                      onChange={(event) => setMpesaPhone(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                {payMethod === "pdq_card" ? (
+                  <>
+                    <label>
+                      <span>Mode</span>
+                      <select
+                        value={pdqMode}
+                        onChange={(event) => setPdqMode(event.target.value)}
+                      >
+                        <option value="standalone">Standalone</option>
+                        <option value="semi_integrated">Semi-integrated</option>
+                        <option value="integrated">Integrated</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Approval / RRN</span>
+                      <input
+                        value={approvalCode}
+                        onChange={(event) => setApprovalCode(event.target.value)}
+                      />
+                    </label>
+                  </>
+                ) : null}
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={recordPayment}
+                >
+                  Record payment
+                </button>
+              </div>
+
+              <div className="payment-list">
+                {orderPayments.length === 0 ? (
+                  <p className="muted">No payments recorded yet.</p>
+                ) : (
+                  orderPayments.map((payment) => (
+                    <div className="payment-row" key={payment.id}>
+                      <span>
+                        <strong>{payment.method}</strong>
+                        <small>
+                          {payment.status}
+                          {payment.provider_ref ? ` · ${payment.provider_ref}` : ""}
+                        </small>
+                      </span>
+                      <strong>{money(payment.amount_minor)}</strong>
+                      {payment.status === "pending" ? (
+                        <>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            disabled={!canVoid}
+                            onClick={() => updatePayment(payment, "confirmed")}
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => updatePayment(payment, "cancelled")}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : null}
+                      {payment.status === "confirmed" && canVoid ? (
+                        <button
+                          className="theme-button"
+                          type="button"
+                          onClick={() => updatePayment(payment, "reversed")}
+                        >
+                          Reverse
+                        </button>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {canVoid ? (
+                <div className="void-controls">
+                  <input
+                    value={reverseReason}
+                    placeholder="Reason for reversal"
+                    onChange={(event) => setReverseReason(event.target.value)}
+                  />
+                </div>
+              ) : null}
+
+              <div className="reconciliation">
+                <span className="eyebrow">Payment mix</span>
+                {report.map((row) => (
+                  <div key={row.method}>
+                    <span>{row.method}</span>
+                    <span>
+                      {money(row.captured_minor)} captured ·{" "}
+                      {money(row.pending_minor)} pending
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="builder-actions">
               <button
                 className="theme-button"

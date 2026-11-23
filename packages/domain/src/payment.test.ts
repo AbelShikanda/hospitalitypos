@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   assertPaymentTransition,
   canPaymentTransition,
+  changeMinor,
   isCard,
   isMpesa,
   isOfflineCapable,
+  outstandingMinor,
+  paidMinor,
   requiresProviderReference,
 } from "./payment.js";
 
@@ -53,5 +56,26 @@ describe("payment method helpers", () => {
     expect(isOfflineCapable("mpesa_manual")).toBe(true);
     expect(isOfflineCapable("pdq_card")).toBe(true);
     expect(isOfflineCapable("mpesa_stk")).toBe(false);
+  });
+});
+
+describe("payment amounts", () => {
+  const payments = [
+    { status: "confirmed" as const, amount_minor: 50000 },
+    { status: "pending" as const, amount_minor: 20000 },
+    { status: "reversed" as const, amount_minor: 10000 },
+  ];
+
+  it("counts only confirmed payments", () => {
+    expect(paidMinor(payments)).toBe(50000);
+  });
+
+  it("computes outstanding without going negative", () => {
+    expect(outstandingMinor(120000, payments)).toBe(70000);
+    expect(outstandingMinor(30000, payments)).toBe(0);
+  });
+
+  it("computes cash change", () => {
+    expect(changeMinor(100000, 72500)).toBe(27500);
   });
 });

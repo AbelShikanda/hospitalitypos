@@ -65,3 +65,28 @@ export function requiresProviderReference(method: PaymentMethod): boolean {
 export function isOfflineCapable(method: PaymentMethod): boolean {
   return method !== "mpesa_stk";
 }
+
+export interface PaymentAmount {
+  status: PaymentState;
+  amount_minor: number;
+}
+
+export function paidMinor(payments: readonly PaymentAmount[]): number {
+  return payments
+    .filter((payment) => payment.status === "confirmed")
+    .reduce((sum, payment) => sum + payment.amount_minor, 0);
+}
+
+export function outstandingMinor(
+  orderTotalMinor: number,
+  payments: readonly PaymentAmount[],
+): number {
+  return Math.max(0, orderTotalMinor - paidMinor(payments));
+}
+
+export function changeMinor(
+  amountTenderedMinor: number,
+  amountDueMinor: number,
+): number {
+  return amountTenderedMinor - amountDueMinor;
+}

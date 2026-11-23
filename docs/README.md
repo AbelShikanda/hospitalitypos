@@ -44,13 +44,15 @@ humans and AI coding agents.
 
 ## Status
 
-Project is at **Phase 2 — Billing, splits and printing** (with Phase 0b
-distribution tracked alongside it). The web, edge and cloud apps run locally;
+Project is at **Phase 3 — Payments** (with Phase 0b distribution tracked
+alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
 send-to-kitchen work end to end on the local edge. Order mutations are
 idempotent, open tabs support appended rounds, notes and courses, and tabs can
 move or merge between tables. PWA writes are optimistic and queued locally with
 automatic retry. Phase 2 adds VAT-inclusive discounts and tips, splits, void
-reasons, 80mm receipts, a retryable print queue and drawer kick. Payments
-architecture covers cash, M-Pesa and PDQ. See `TASKS.md` for the live checklist.
+reasons, 80mm receipts, a retryable print queue and drawer kick. Phase 3 adds
+idempotent cash, manual M-Pesa and PDQ standalone capture with confirmation,
+reversal and reconciliation. Daraja STK, integrated PDQ and KDS routing remain
+queued. See `TASKS.md` for the live checklist.

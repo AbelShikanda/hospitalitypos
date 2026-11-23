@@ -464,6 +464,78 @@ const printJobs: Migration = {
   },
 };
 
+const payments: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("payments")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("order_id", "char(26)", (column) => column.notNull())
+      .addColumn("method", "varchar(20)", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) =>
+        column.notNull().defaultTo("pending"),
+      )
+      .addColumn("amount_minor", "integer", (column) => column.notNull())
+      .addColumn("currency", "varchar(3)", (column) =>
+        column.notNull().defaultTo("KES"),
+      )
+      .addColumn("idempotency_key", "varchar(128)", (column) =>
+        column.notNull(),
+      )
+      .addColumn("provider_ref", "varchar(128)")
+      .addColumn("details", "text", (column) =>
+        column.notNull().defaultTo("{}"),
+      )
+      .addColumn("created_by", "char(26)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .addColumn("confirmed_at", "timestamp")
+      .execute();
+
+    await db.schema
+      .createTable("payment_events")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("payment_id", "char(26)", (column) => column.notNull())
+      .addColumn("type", "varchar(40)", (column) => column.notNull())
+      .addColumn("data", "text", (column) => column.notNull())
+      .addColumn("actor_user_id", "char(26)")
+      .addColumn("idempotency_key", "varchar(128)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("payments_tenant_idempotency_uidx")
+      .ifNotExists()
+      .on("payments")
+      .columns(["tenant_id", "idempotency_key"])
+      .unique()
+      .execute();
+
+    await db.schema
+      .createIndex("payments_tenant_order_idx")
+      .ifNotExists()
+      .on("payments")
+      .columns(["tenant_id", "order_id"])
+      .execute();
+
+    await db.schema
+      .createIndex("payment_events_tenant_payment_idx")
+      .ifNotExists()
+      .on("payment_events")
+      .columns(["tenant_id", "payment_id"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("payment_events").ifExists().execute();
+    await db.schema.dropTable("payments").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -472,6 +544,7 @@ const migrations: Record<string, Migration> = {
   "005_order_event_idempotency": orderEventIdempotency,
   "006_order_courses": orderCourses,
   "007_print_jobs": printJobs,
+  "008_payments": payments,
 };
 
 export const migrationProvider: MigrationProvider = {

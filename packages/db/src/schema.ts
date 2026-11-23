@@ -174,6 +174,35 @@ export interface OrderEventsTable {
   created_at: Timestamp;
 }
 
+export interface PaymentsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  order_id: string;
+  method: string;
+  status: string;
+  amount_minor: number;
+  currency: string;
+  idempotency_key: string;
+  provider_ref: string | null;
+  details: string;
+  created_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  confirmed_at: Timestamp | null;
+}
+
+export interface PaymentEventsTable {
+  id: string;
+  tenant_id: string;
+  payment_id: string;
+  type: string;
+  data: string;
+  actor_user_id: string | null;
+  idempotency_key: string | null;
+  created_at: Timestamp;
+}
+
 export interface PrintJobsTable {
   id: string;
   tenant_id: string;
@@ -208,4 +237,6 @@ export interface Database {
   order_item_modifiers: OrderItemModifiersTable;
   order_events: OrderEventsTable;
   print_jobs: PrintJobsTable;
+  payments: PaymentsTable;
+  payment_events: PaymentEventsTable;
 }

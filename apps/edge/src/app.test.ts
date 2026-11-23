@@ -1069,6 +1069,108 @@ describe("menu, floor and orders", () => {
     expect(jobList).toHaveLength(1);
   });
 
+  it("records payments with idempotency, confirmation and reversal", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const cashPayload = {
+      order_id: order.id,
+      method: "cash",
+      amount_minor: 50000,
+      idempotency_key: "cash-payment-001",
+    };
+    const cash = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(cashPayload),
+    });
+    expect(cash.status).toBe(201);
+    const cashPayment = (await cash.json()) as { id: string; status: string };
+    expect(cashPayment.status).toBe("confirmed");
+
+    const replay = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(cashPayload),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ id: cashPayment.id });
+
+    const manual = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "mpesa_manual",
+        amount_minor: 50000,
+        idempotency_key: "mpesa-payment-001",
+        mpesa: { reference: "ABC123XYZ" },
+      }),
+    });
+    expect(manual.status).toBe(201);
+    const manualPayment = (await manual.json()) as { id: string; status: string };
+    expect(manualPayment.status).toBe("pending");
+
+    const confirmed = await app.request(
+      `/api/payments/${manualPayment.id}/confirm`,
+      { method: "POST", headers: { cookie } },
+    );
+    expect(confirmed.status).toBe(200);
+    await expect(confirmed.json()).resolves.toMatchObject({
+      status: "confirmed",
+    });
+
+    const reversed = await app.request(
+      `/api/payments/${manualPayment.id}/reverse`,
+      {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Customer disputed the code" }),
+      },
+    );
+    expect(reversed.status).toBe(200);
+    await expect(reversed.json()).resolves.toMatchObject({
+      status: "reversed",
+    });
+
+    const report = await app.request(
+      `/api/payments/reconciliation?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const rows = (await report.json()) as Array<{
+      method: string;
+      captured_minor: number;
+      reversed_minor: number;
+    }>;
+    expect(rows.find((row) => row.method === "cash")).toMatchObject({
+      captured_minor: 50000,
+    });
+    expect(rows.find((row) => row.method === "mpesa_manual")).toMatchObject({
+      reversed_minor: 50000,
+    });
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");
