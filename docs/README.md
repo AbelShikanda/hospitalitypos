@@ -17,6 +17,8 @@ humans and AI coding agents.
 | [`VISUAL-IDENTITY.md`](./VISUAL-IDENTITY.md) | Colour/type/depth tokens (dark, light, optional neon)            | Palette or brand direction changes           |
 | [`PAYMENTS.md`](./PAYMENTS.md)               | Payment methods, M-Pesa/PDQ flows, state machine, reconciliation | Payment method or provider changes           |
 | [`DESKTOP.md`](./DESKTOP.md)                 | Desktop app + shortcuts, no-console launchers, installers        | Shortcut or launcher changes                 |
+| [`PROVISIONING.md`](./PROVISIONING.md)       | Edge box, LAN devices, printers, cloud sync and backups          | Device setup or network requirements change  |
+| [`LAUNCH.md`](./LAUNCH.md)                   | Chaos, load, security, backup and pilot drills                   | Launch checklist or drill procedure changes  |
 | [`TASKS.md`](./TASKS.md)                     | Phased roadmap and living checklist                              | Work starts, finishes, or is re-prioritized  |
 | [`AGENT.md`](./AGENT.md)                     | Operating rules, conventions and **commit instructions**         | Conventions, commands, or guardrails change  |
 
@@ -29,7 +31,9 @@ humans and AI coding agents.
 5. `VISUAL-IDENTITY.md` — know the visual tokens and usage rules.
 6. `PAYMENTS.md` — know how cash, M-Pesa and PDQ fit together.
 7. `DESKTOP.md` — every release ships a desktop shortcut.
-8. `TASKS.md` — pick the next task.
+8. `PROVISIONING.md` — prepare the edge box and venue devices.
+9. `LAUNCH.md` — run the drills before a pilot.
+10. `TASKS.md` — pick the next task.
 9. `AGENT.md` — follow the working rules while doing it.
 
 ## Ground rules for this folder
@@ -44,8 +48,8 @@ humans and AI coding agents.
 
 ## Status
 
-Project is at **Phase 8 — Cloud sync and SaaS control plane** (with Phase 0b
-distribution tracked alongside it). The web, edge and cloud apps run locally;
+Project is at **Phase 9 — Hardening and launch** (with Phase 0b distribution
+tracked alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
 send-to-kitchen work end to end on the local edge. Order mutations are
@@ -61,5 +65,6 @@ clock-in/out, per-staff sales, Z-reports and CSV export. Phase 6 adds
 recipe-based stock depletion, low-stock alerts, counts and suppliers. Phase 7
 adds derived sales, payment, item, staff and VAT reports with date filters and
 CSV export. Phase 8 adds edge→cloud sync with idempotent events, cursors,
-heartbeats, catalog publishing and cloud aggregates. Integrated PDQ and
-encrypted backups remain queued. See `TASKS.md` for the live checklist.
+heartbeats, catalog publishing and cloud aggregates. Phase 9 adds launch drills,
+load/backup scripts and provisioning guides. Integrated PDQ and encrypted
+backups remain queued. See `TASKS.md` for the live checklist.

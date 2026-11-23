@@ -18,7 +18,9 @@
     "db:migrate": "pnpm --filter @hpos/db migrate",
     "db:seed": "pnpm --filter @hpos/db seed",
     "license:check": "node -e \"console.log('All runtime deps are OSS (MIT/Apache-2.0). Verify before release.')\"",
-    "docker:edge": "docker compose -f docker/edge/docker-compose.yml up -d"
+    "docker:edge": "docker compose -f docker/edge/docker-compose.yml up -d",
+    "load:test": "node scripts/load-test.mjs",
+    "backup:drill": "node scripts/backup-restore.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

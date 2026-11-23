@@ -101,4 +101,5 @@ export. Phase 6 adds recipe-based stock depletion, low-stock alerts, counts and
 suppliers. Phase 7 adds derived sales, payment, item, staff and VAT reports with
 date filters and CSV export. Phase 8 adds edge→cloud sync with idempotent
 outbox/inbox events, cursors, heartbeat telemetry, catalog publishing and cloud
-aggregates. Integrated PDQ and encrypted backups remain queued in `docs/TASKS.md`.
+aggregates. Phase 9 adds launch drills, load/backup scripts and provisioning
+guides. Integrated PDQ and encrypted backups remain queued in `docs/TASKS.md`.

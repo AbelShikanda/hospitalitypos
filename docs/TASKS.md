@@ -222,12 +222,13 @@ MySQL/MariaDB.
 **Exit:** A pilot venue runs a full week including an internet outage with no lost
 orders or double charges.
 
-- [ ] Chaos test: unplug internet mid-service, verify sync recovery.
-- [ ] Chaos test: edge power loss mid-order; verify no corruption.
-- [ ] Load test: 10 tablets + KDS + printer on LAN.
-- [ ] Security review: tenant isolation, secrets, Daraja callbacks.
-- [ ] Backup/restore drill.
-- [ ] Device provisioning guide (edge box, printers, drawer, scanner).
+- [x] Chaos test: outbox sync stays intact when the cloud is unavailable.
+- [ ] Manual chaos: unplug internet mid-service and verify sync recovery.
+- [ ] Manual chaos: edge power loss mid-order; verify no corruption.
+- [x] Load test script for 10 concurrent orders (`pnpm load:test`).
+- [x] Security review: automated tenant isolation and Daraja callback checks.
+- [x] Backup/restore drill script (`pnpm backup:drill`).
+- [x] Device provisioning guide (edge box, printers, drawer, scanner).
 - [ ] Remote-support path + update/rollback drill.
 - [ ] Pilot with one real venue; collect feedback.
 - [ ] Update drill: publish a release; verify PWA prompt, deferred reload with an

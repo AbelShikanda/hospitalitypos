@@ -899,6 +899,29 @@ edge ledger. Backup uploads and SSL deployment remain separate rollout steps.
 
 ---
 
+## ADR-034 — Launch readiness separates automated and manual drills
+
+**Status:** Accepted
+
+**Context:** Some hardening can be proven in CI, but power loss, real printers
+and venue internet outages require a person on site.
+
+**Decision:**
+
+- Automated tests cover outbox retention during cloud failure, tenant isolation
+  across major routes and Daraja callback validation.
+- Scripts provide repeatable load (`pnpm load:test`) and backup/restore drills
+  (`pnpm backup:drill`).
+- `docs/PROVISIONING.md` and `docs/LAUNCH.md` separate automated evidence from
+  manual pilot sign-off.
+- Manual drills must be recorded with date, operator and result before a venue
+  goes live.
+
+**Consequences:** No claim of pilot readiness is made from code alone. Remaining
+manual items are explicit rather than implied.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

@@ -1631,6 +1631,23 @@ describe("menu, floor and orders", () => {
     expect(await csv.text()).toContain("16");
   });
 
+  it("isolates stock, reports and shifts between tenants", async () => {
+    const db = await makeDb();
+    const alpha = await addTenant(db, "Alpha");
+    await addTenant(db, "Beta");
+    const app = appFor(db);
+    const { cookie } = await login(app, await addTenant(db, "Gamma"));
+
+    for (const path of [
+      `/api/stock?venue_id=${alpha.venueId}`,
+      `/api/reports?venue_id=${alpha.venueId}`,
+      `/api/shifts?venue_id=${alpha.venueId}`,
+    ]) {
+      const response = await app.request(path, { headers: { cookie } });
+      expect(response.status).toBe(404);
+    }
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");
