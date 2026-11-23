@@ -2,23 +2,23 @@
 
 Working name: **Hospitality POS** (rename freely).
 
-This folder is the source of truth for *what* we are building, *why*, *how* we
-decided to build it, and *what to do next*. It is written to be read by both
+This folder is the source of truth for _what_ we are building, _why_, _how_ we
+decided to build it, and _what to do next_. It is written to be read by both
 humans and AI coding agents.
 
 ## Doc map
 
-| File | Purpose | Update when |
-| --- | --- | --- |
-| [`GOAL.md`](./GOAL.md) | Vision, users, MVP scope, success metrics, non-goals | Scope or priorities change |
-| [`DECISIONS.md`](./DECISIONS.md) | Architecture Decision Records (ADRs) | Any architectural choice is made or reversed |
-| [`STACK.md`](./STACK.md) | Stack sheet: versions, ports, env, commands, deployment | Tooling or versions change |
-| [`UI.md`](./UI.md) | UI/layout guide + what to hand the agent | Design direction or screens change |
-| [`VISUAL-IDENTITY.md`](./VISUAL-IDENTITY.md) | Colour/type/depth tokens (dark, light, optional neon) | Palette or brand direction changes |
-| [`PAYMENTS.md`](./PAYMENTS.md) | Payment methods, M-Pesa/PDQ flows, state machine, reconciliation | Payment method or provider changes |
-| [`DESKTOP.md`](./DESKTOP.md) | Desktop app + shortcuts, no-console launchers, installers | Shortcut or launcher changes |
-| [`TASKS.md`](./TASKS.md) | Phased roadmap and living checklist | Work starts, finishes, or is re-prioritized |
-| [`AGENT.md`](./AGENT.md) | Operating rules, conventions and **commit instructions** | Conventions, commands, or guardrails change |
+| File                                         | Purpose                                                          | Update when                                  |
+| -------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------- |
+| [`GOAL.md`](./GOAL.md)                       | Vision, users, MVP scope, success metrics, non-goals             | Scope or priorities change                   |
+| [`DECISIONS.md`](./DECISIONS.md)             | Architecture Decision Records (ADRs)                             | Any architectural choice is made or reversed |
+| [`STACK.md`](./STACK.md)                     | Stack sheet: versions, ports, env, commands, deployment          | Tooling or versions change                   |
+| [`UI.md`](./UI.md)                           | UI/layout guide + what to hand the agent                         | Design direction or screens change           |
+| [`VISUAL-IDENTITY.md`](./VISUAL-IDENTITY.md) | Colour/type/depth tokens (dark, light, optional neon)            | Palette or brand direction changes           |
+| [`PAYMENTS.md`](./PAYMENTS.md)               | Payment methods, M-Pesa/PDQ flows, state machine, reconciliation | Payment method or provider changes           |
+| [`DESKTOP.md`](./DESKTOP.md)                 | Desktop app + shortcuts, no-console launchers, installers        | Shortcut or launcher changes                 |
+| [`TASKS.md`](./TASKS.md)                     | Phased roadmap and living checklist                              | Work starts, finishes, or is re-prioritized  |
+| [`AGENT.md`](./AGENT.md)                     | Operating rules, conventions and **commit instructions**         | Conventions, commands, or guardrails change  |
 
 ## Reading order
 
@@ -44,9 +44,10 @@ humans and AI coding agents.
 
 ## Status
 
-Project is at **Phase 0 — Foundation** (with **Phase 0b — Distribution,
-updates and lifecycle** tracked alongside it). The web, edge and cloud apps run
-locally; the edge serves the PWA. Payments architecture covers cash, M-Pesa and
-PDQ. Edge PIN auth, revocable sessions and tenant isolation are in place. Next:
-dual-dialect isolation tests/CI and Phase 1 menu/order work. See `TASKS.md` for
-the live checklist.
+Project is at **Phase 1 — Menu, tables and order taking** (with Phase 0b
+distribution tracked alongside it). The web, edge and cloud apps run locally;
+the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
+are in place. Phase 1 core is complete: menu, floor plan, order taking and
+send-to-kitchen work end to end on the local edge. Next: order notes/courses,
+open tabs, optimistic UI, and outbox writes with idempotency keys. Payments
+architecture covers cash, M-Pesa and PDQ. See `TASKS.md` for the live checklist.
