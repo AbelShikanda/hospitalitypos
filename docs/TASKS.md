@@ -94,7 +94,8 @@ data survives an edge-node restart.
 - [x] Order state machine in `domain` (open → sent → preparing → served → closed)
       with unit tests.
 - [x] Order taking UI: fast touch grid, modifiers, quantity; send to kitchen.
-- [ ] Order notes and courses.
+- [x] Order notes on creation and appended rounds.
+- [ ] Courses.
 - [x] Open tabs: reopen, append rounds and send new items.
 - [ ] Move/merge tables.
 - [x] Local persistence on edge (SQLite) + restart survival.

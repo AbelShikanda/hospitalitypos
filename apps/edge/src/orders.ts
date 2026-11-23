@@ -527,6 +527,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
             subtotal_minor: totals.subtotalMinor,
             tax_minor: totals.taxMinor,
             total_minor: totals.totalMinor,
+            ...(input.notes !== undefined
+              ? { notes: input.notes.trim() || null }
+              : {}),
             updated_at: now,
           })
           .where("id", "=", order.id)

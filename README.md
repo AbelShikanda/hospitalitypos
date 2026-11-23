@@ -89,6 +89,7 @@ Start at [`docs/README.md`](docs/README.md). Key reads:
 Phase 0 foundation and edge authentication are complete. Phase 1 core is
 complete: menu, floor plan, order taking and send-to-kitchen work end to end on
 the local edge. Order mutations are idempotent, and open tabs can be reopened
-to append and fire new rounds. Remaining Phase 1 items are order notes/courses,
-move/merge tables, optimistic UI, and outbox writes. Payments, billing and
-printing are designed and queued in `docs/TASKS.md`.
+to append and fire new rounds. Order notes are supported on creation and
+appended rounds. Remaining Phase 1 items are courses, move/merge tables,
+optimistic UI, and outbox writes. Payments, billing and printing are designed
+and queued in `docs/TASKS.md`.

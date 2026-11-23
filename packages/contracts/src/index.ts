@@ -247,6 +247,7 @@ export const createOrderSchema = z.object({
 
 export const addOrderItemsSchema = z.object({
   idempotency_key: z.string().min(8).max(128).optional(),
+  notes: z.string().max(500).optional(),
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 

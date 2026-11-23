@@ -655,6 +655,7 @@ describe("menu, floor and orders", () => {
 
     const appendPayload = {
       idempotency_key: "append-key-0001",
+      notes: "Bring extra napkins",
       items: [
         {
           item_id: menu.itemId,
@@ -673,6 +674,7 @@ describe("menu, floor and orders", () => {
 
     const appendedOrder = (await appended.json()) as {
       status: string;
+      notes: string;
       subtotal_minor: number;
       tax_minor: number;
       total_minor: number;
@@ -680,6 +682,7 @@ describe("menu, floor and orders", () => {
     };
     expect(appendedOrder).toMatchObject({
       status: "sent",
+      notes: "Bring extra napkins",
       subtotal_minor: 297414,
       tax_minor: 47586,
       total_minor: 345000,

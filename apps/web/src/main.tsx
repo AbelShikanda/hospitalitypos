@@ -103,6 +103,7 @@ type Order = {
   tax_minor: number;
   total_minor: number;
   table_id: string | null;
+  notes: string | null;
   items: Array<{
     id: string;
     item_id: string;
@@ -545,6 +546,7 @@ function OrderBuilder({
   const [menu, setMenu] = useState<Menu | null>(null);
   const [categoryId, setCategoryId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [notes, setNotes] = useState("");
   const [pending, setPending] = useState<MenuItem | null>(null);
   const [existingOrder, setExistingOrder] = useState<Order | null>(null);
   const [error, setError] = useState("");
@@ -671,6 +673,7 @@ function OrderBuilder({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               idempotency_key: idempotencyKey.current,
+              ...(notes.trim() ? { notes: notes.trim() } : {}),
               items,
             }),
           })
@@ -682,6 +685,7 @@ function OrderBuilder({
               venue_id: venueId,
               table_id: table.id,
               idempotency_key: idempotencyKey.current,
+              ...(notes.trim() ? { notes: notes.trim() } : {}),
               items,
             }),
           });
@@ -810,6 +814,9 @@ function OrderBuilder({
                 <span>Already ordered</span>
                 <strong>{existingOrder.number}</strong>
               </div>
+              {existingOrder.notes ? (
+                <p className="order-note">{existingOrder.notes}</p>
+              ) : null}
               <div className="cart-list cart-list--locked">
                 {existingOrder.items.map((item) => (
                   <div className="cart-line cart-line--locked" key={item.id}>
@@ -881,6 +888,17 @@ function OrderBuilder({
               })
             )}
           </div>
+
+          <label className="note-field">
+            <span>{existingOrder ? "Note for this round" : "Order note"}</span>
+            <textarea
+              value={notes}
+              maxLength={500}
+              rows={2}
+              placeholder="e.g. no onions, extra napkins"
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </label>
 
           <div className="cart-summary">
             {existingOrder ? (
