@@ -668,6 +668,60 @@ describe("menu, floor and orders", () => {
     expect(preparingAgain.status).toBe(200);
   });
 
+  it("accepts a client order id and combined create-and-send request", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+    const clientId = newId();
+
+    const payload = {
+      id: clientId,
+      venue_id: fixture.venueId,
+      table_id: menu.tableId,
+      idempotency_key: "queued-order-0001",
+      send: true,
+      course: "starter",
+      items: [
+        { item_id: menu.starterItemId, quantity: 1 },
+        {
+          item_id: menu.itemId,
+          quantity: 1,
+          modifier_ids: [menu.modifierId],
+        },
+      ],
+    };
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as {
+      id: string;
+      status: string;
+      items: Array<{ course: string; status: string }>;
+    };
+    expect(order.id).toBe(clientId);
+    expect(order.status).toBe("sent");
+    expect(
+      order.items.find((item) => item.course === "starter")?.status,
+    ).toBe("sent");
+    expect(
+      order.items.find((item) => item.course === "main")?.status,
+    ).toBe("pending");
+
+    const replay = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ id: clientId });
+  });
+
   it("fires only the selected course and then the remaining items", async () => {
     const db = await makeDb();
     const fixture = await addTenant(db, "Alpha");

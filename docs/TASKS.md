@@ -95,13 +95,13 @@ data survives an edge-node restart.
       with unit tests.
 - [x] Order taking UI: fast touch grid, modifiers, quantity; send to kitchen.
 - [x] Order notes on creation and appended rounds.
-- [ ] Courses.
+- [x] Courses: menu item course and per-course firing.
 - [x] Open tabs: reopen, append rounds and send new items.
 - [x] Move/merge tables with table-status updates and audit events.
 - [x] Local persistence on edge (SQLite) + restart survival.
-- [ ] Optimistic UI in PWA.
+- [x] Optimistic UI in PWA with queued-write indicator.
 - [x] Idempotency keys on order creation and safe transition retries.
-- [ ] Outbox write on every mutation.
+- [x] Outbox write on every mutation with retry on reconnect.
 - [x] Audit log for order events.
 
 ---

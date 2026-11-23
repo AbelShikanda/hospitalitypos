@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { newId } from "@hpos/domain";
 import "@hpos/ui/styles/tokens.css";
 import "./styles.css";
+import {
+  enqueueOutbox,
+  flushOutbox,
+  getOutboxCount,
+  subscribeOutbox,
+} from "./outbox.js";
 
 type Role = "owner" | "manager" | "cashier" | "waiter" | "kitchen";
 
@@ -218,33 +225,6 @@ function cartTotals(cart: CartLine[]) {
     taxMinor,
     subtotalMinor: totalMinor - taxMinor,
   };
-}
-
-function errorText(code: unknown): string {
-  switch (code) {
-    case "table_occupied":
-      return "That table already has an open order.";
-    case "modifier_required":
-      return "Choose the required options for this item.";
-    case "too_many_modifiers":
-      return "Too many options selected.";
-    case "item_unavailable":
-      return "That item is unavailable.";
-    case "unknown_item":
-      return "The menu changed. Refresh and try again.";
-    case "idempotency_conflict":
-      return "This order was already saved elsewhere. Refresh the floor.";
-    case "order_closed":
-      return "That tab is already closed.";
-    case "table_unavailable":
-      return "That table is not available.";
-    case "target_not_found":
-      return "The target tab no longer exists. Refresh and try again.";
-    case "target_closed":
-      return "That tab is already closed.";
-    default:
-      return "Could not save the order. Try again.";
-  }
 }
 
 function Splash({ phase, version }: { phase: Phase; version?: string }) {
@@ -587,10 +567,11 @@ function OrderBuilder({
   const [mergeOrderId, setMergeOrderId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState<
-    "save" | "send" | "move" | "merge" | null
-  >(null);
+  const [submitting] = useState<"save" | "send" | "move" | "merge" | null>(
+    null,
+  );
   const idempotencyKey = useRef(crypto.randomUUID());
+  const newOrderId = useRef(newId());
 
   useEffect(() => {
     idempotencyKey.current = crypto.randomUUID();
@@ -673,61 +654,79 @@ function OrderBuilder({
       order.status !== "voided",
   );
 
-  async function moveTable() {
+  function optimisticOrder(mode: "save" | "send"): Order {
+    const newTotals = cartTotals(cart);
+    const newItems = cart.map((line, index) => {
+      const delta = line.modifiers.reduce(
+        (sum, modifier) => sum + modifier.price_delta_minor,
+        0,
+      );
+      const fired =
+        mode === "send" &&
+        (selectedCourse === "all" || line.item.course === selectedCourse);
+      return {
+        id: `local-${index}-${line.key}`,
+        item_id: line.item.id,
+        name: line.item.name,
+        unit_price_minor: line.item.price_minor + delta,
+        quantity: line.quantity,
+        tax_rate: line.item.tax_rate,
+        course: line.item.course,
+        line_total_minor: (line.item.price_minor + delta) * line.quantity,
+        notes: notes.trim() || null,
+        status: fired ? "sent" : "pending",
+        modifiers: line.modifiers.map((modifier) => ({ name: modifier.name })),
+      };
+    });
+
+    return {
+      id: existingOrder?.id ?? newOrderId.current,
+      number: existingOrder?.number ?? "#LOCAL",
+      status:
+        mode === "send"
+          ? "sent"
+          : (existingOrder?.status ?? "open"),
+      subtotal_minor:
+        (existingOrder?.subtotal_minor ?? 0) + newTotals.subtotalMinor,
+      tax_minor: (existingOrder?.tax_minor ?? 0) + newTotals.taxMinor,
+      total_minor: (existingOrder?.total_minor ?? 0) + newTotals.totalMinor,
+      table_id: table.id,
+      notes: notes.trim() || existingOrder?.notes || null,
+      items: [...(existingOrder?.items ?? []), ...newItems],
+    };
+  }
+
+  function moveTable() {
     if (!existingOrder || !moveTableId) return;
-    setSubmitting("move");
     setError("");
     try {
-      const response = await fetch(`/api/orders/${existingOrder.id}/move`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      enqueueOutbox({
+        url: `/api/orders/${existingOrder.id}/move`,
+        body: {
           table_id: moveTableId,
           idempotency_key: crypto.randomUUID(),
-        }),
+        },
       });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(errorText(body?.error));
-        return;
-      }
-      onDone((await response.json()) as Order, "move");
+      onDone({ ...existingOrder, table_id: moveTableId }, "move");
     } catch {
-      setError("Network error. The table was not moved.");
-    } finally {
-      setSubmitting(null);
+      setError("The table move could not be queued. Try again.");
     }
   }
 
-  async function mergeTable() {
+  function mergeTable() {
     if (!existingOrder || !mergeOrderId) return;
-    setSubmitting("merge");
     setError("");
     try {
-      const response = await fetch(`/api/orders/${existingOrder.id}/merge`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+      enqueueOutbox({
+        url: `/api/orders/${existingOrder.id}/merge`,
+        body: {
           target_order_id: mergeOrderId,
           idempotency_key: crypto.randomUUID(),
-        }),
+        },
       });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(errorText(body?.error));
-        return;
-      }
-      onDone((await response.json()) as Order, "merge");
+      onDone(existingOrder, "merge");
     } catch {
-      setError("Network error. The tables were not merged.");
-    } finally {
-      setSubmitting(null);
+      setError("The table merge could not be queued. Try again.");
     }
   }
 
@@ -767,13 +766,12 @@ function OrderBuilder({
     );
   }
 
-  async function submit(mode: "save" | "send") {
+  function submit(mode: "save" | "send") {
     if (!cart.length) {
       setError("Add at least one item.");
       return;
     }
 
-    setSubmitting(mode);
     setError("");
     try {
       const items = cart.map((line) => ({
@@ -781,64 +779,36 @@ function OrderBuilder({
         quantity: line.quantity,
         modifier_ids: line.modifiers.map((modifier) => modifier.id),
       }));
+      const common = {
+        idempotency_key: idempotencyKey.current,
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+        send: mode === "send",
+        ...(mode === "send" && selectedCourse !== "all"
+          ? { course: selectedCourse }
+          : {}),
+        items,
+      };
 
-      const response = existingOrder
-        ? await fetch(`/api/orders/${existingOrder.id}/items`, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              idempotency_key: idempotencyKey.current,
-              ...(notes.trim() ? { notes: notes.trim() } : {}),
-              items,
-            }),
-          })
-        : await fetch("/api/orders", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              venue_id: venueId,
-              table_id: table.id,
-              idempotency_key: idempotencyKey.current,
-              ...(notes.trim() ? { notes: notes.trim() } : {}),
-              items,
-            }),
-          });
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(errorText(body?.error));
-        return;
-      }
-
-      let order = (await response.json()) as Order;
-
-      if (existingOrder) setExistingOrder(order);
-
-      if (mode === "send") {
-        const sent = await fetch(`/api/orders/${order.id}/send`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(
-            selectedCourse === "all" ? {} : { course: selectedCourse },
-          ),
+      if (existingOrder) {
+        enqueueOutbox({
+          url: `/api/orders/${existingOrder.id}/items`,
+          body: common,
         });
-        if (!sent.ok) {
-          setError("Order saved but could not be sent to the kitchen.");
-          return;
-        }
-        order = (await sent.json()) as Order;
+      } else {
+        enqueueOutbox({
+          url: "/api/orders",
+          body: {
+            id: newOrderId.current,
+            venue_id: venueId,
+            table_id: table.id,
+            ...common,
+          },
+        });
       }
 
-      onDone(order, mode);
+      onDone(optimisticOrder(mode), mode);
     } catch {
-      setError("Network error. The order was not saved.");
-    } finally {
-      setSubmitting(null);
+      setError("The order could not be queued. Try again.");
     }
   }
 
@@ -1217,6 +1187,14 @@ function TablesView({ venueId }: { venueId: string }) {
     void refresh();
   }, [venueId]);
 
+  useEffect(
+    () =>
+      subscribeOutbox((count) => {
+        if (count === 0) void refresh();
+      }),
+    [venueId],
+  );
+
   if (selected) {
     return (
       <OrderBuilder
@@ -1417,6 +1395,7 @@ function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [view, setView] = useState<NavItem>("Tables");
+  const [queued, setQueued] = useState(getOutboxCount());
 
   useEffect(() => {
     const saved = localStorage.getItem("hpos-theme");
@@ -1427,6 +1406,21 @@ function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("hpos-theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeOutbox(setQueued);
+    const flush = () => void flushOutbox();
+    const timer = window.setInterval(flush, 10000);
+    window.addEventListener("online", flush);
+    window.addEventListener("focus", flush);
+    flush();
+    return () => {
+      unsubscribe();
+      window.clearInterval(timer);
+      window.removeEventListener("online", flush);
+      window.removeEventListener("focus", flush);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1525,7 +1519,10 @@ function App() {
         </div>
         <div className="top-actions">
           <span className="pill">
-            <span className="status-dot status-dot--success" /> Online
+            <span
+              className={`status-dot ${queued ? "status-dot--danger" : "status-dot--success"}`}
+            />
+            {queued ? `Queued ${queued}` : "Online"}
           </span>
           {session ? (
             <span className="user-pill">

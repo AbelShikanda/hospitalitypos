@@ -88,8 +88,7 @@ Start at [`docs/README.md`](docs/README.md). Key reads:
 
 Phase 0 foundation and edge authentication are complete. Phase 1 core is
 complete: menu, floor plan, order taking and send-to-kitchen work end to end on
-the local edge. Order mutations are idempotent, and open tabs can be reopened
-to append and fire new rounds. Order notes are supported on creation and
-appended rounds, and courses can be fired separately, and tabs can move or merge between tables.
-Remaining Phase 1 items are optimistic UI and outbox writes. Payments, billing
-and printing are designed and queued in `docs/TASKS.md`.
+the local edge. Order mutations are idempotent; tabs can be reopened, moved,
+merged, annotated and fired by course. PWA writes are optimistic and queued
+locally with automatic retry. Payments, billing and printing are designed and
+queued in `docs/TASKS.md`.

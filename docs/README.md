@@ -49,7 +49,7 @@ distribution tracked alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
 send-to-kitchen work end to end on the local edge. Order mutations are
-idempotent, open tabs support appended rounds, order notes are stored, and
-courses fire separately, and tabs can move or merge between tables. Next:
-optimistic UI and outbox writes. Payments
-architecture covers cash, M-Pesa and PDQ. See `TASKS.md` for the live checklist.
+idempotent, open tabs support appended rounds, notes and courses, and tabs can
+move or merge between tables. PWA writes are optimistic and queued locally with
+automatic retry. Payments architecture covers cash, M-Pesa and PDQ. See
+`TASKS.md` for the live checklist.

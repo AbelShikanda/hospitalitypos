@@ -676,6 +676,32 @@ remain in the audit trail.
 
 ---
 
+## ADR-025 — PWA writes are optimistic and queued locally
+
+**Status:** Accepted
+
+**Context:** Venue WiFi and the edge box can blink mid-service. A waiter must not
+lose an order because a fetch failed, and creating an order then firing it in
+two calls creates a dependency that is hard to replay safely.
+
+**Decision:**
+
+- Order creation accepts a client-generated `id`; append accepts a combined
+  `send` flag plus optional `course`, so one queued mutation can both save and
+  fire the right items.
+- The PWA writes every order mutation to a localStorage outbox first, then
+  flushes sequentially on demand, on `online`, on focus and on a timer.
+- Each queued request carries an idempotency key; server replays return the
+  original result, so retries never duplicate orders or rounds.
+- The UI renders the resulting order optimistically and shows a queued count in
+  the top bar. The floor refreshes when the queue drains.
+
+**Consequences:** A dropped LAN response no longer blocks the waiter. The
+outbox is edge-only for now; the cloud sync worker can later consume the same
+records. Failed requests stay queued and are surfaced through the queued count.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

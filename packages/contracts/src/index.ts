@@ -248,16 +248,21 @@ export const createOrderItemSchema = z.object({
 });
 
 export const createOrderSchema = z.object({
+  id: ulid.optional(),
   venue_id: ulid,
   table_id: ulid.optional(),
   notes: z.string().max(500).optional(),
   idempotency_key: z.string().min(8).max(128).optional(),
+  send: z.boolean().default(false),
+  course: courseSchema.optional(),
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 
 export const addOrderItemsSchema = z.object({
   idempotency_key: z.string().min(8).max(128).optional(),
   notes: z.string().max(500).optional(),
+  send: z.boolean().default(false),
+  course: courseSchema.optional(),
   items: z.array(createOrderItemSchema).min(1).max(100),
 });
 

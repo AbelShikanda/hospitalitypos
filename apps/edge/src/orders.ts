@@ -256,8 +256,11 @@ function buildItemRows(
     price_delta_minor: number;
   }> = [];
 
+  const itemIds: string[] = [];
+
   for (const line of lines) {
     const orderItemId = newId();
+    itemIds.push(orderItemId);
     itemRows.push({
       id: orderItemId,
       tenant_id: tenantId,
@@ -286,7 +289,7 @@ function buildItemRows(
     }
   }
 
-  return { itemRows, modifierRows };
+  return { itemRows, modifierRows, itemIds };
 }
 
 export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
@@ -362,11 +365,21 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
       .where("venue_id", "=", venue.id)
       .executeTakeFirst();
 
+    const orderId = input.id ?? newId();
+    if (input.id) {
+      const clash = await db
+        .selectFrom("orders")
+        .select("id")
+        .where("id", "=", input.id)
+        .where("tenant_id", "=", auth.tenantId)
+        .executeTakeFirst();
+      if (clash) return context.json({ error: "order_id_conflict" }, 409);
+    }
+
     const now = new Date().toISOString();
-    const orderId = newId();
     const number = `#${String(Number(countRow?.count ?? 0) + 1).padStart(4, "0")}`;
 
-    const { itemRows, modifierRows } = buildItemRows(
+    const { itemRows, modifierRows, itemIds } = buildItemRows(
       auth.tenantId,
       orderId,
       lines,
@@ -421,6 +434,48 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
             created_at: now,
           })
           .execute();
+
+        if (input.send) {
+          const sendIds = lines.flatMap((line, index) =>
+            !input.course || line.item.course === input.course
+              ? [itemIds[index]!]
+              : [],
+          );
+
+          if (sendIds.length) {
+            await trx
+              .updateTable("orders")
+              .set({ status: "sent", updated_at: now })
+              .where("id", "=", orderId)
+              .where("tenant_id", "=", auth.tenantId)
+              .execute();
+
+            await trx
+              .updateTable("order_items")
+              .set({ status: "sent" })
+              .where("id", "in", sendIds)
+              .where("tenant_id", "=", auth.tenantId)
+              .execute();
+
+            await trx
+              .insertInto("order_events")
+              .values({
+                id: newId(),
+                tenant_id: auth.tenantId,
+                order_id: orderId,
+                type: "sent",
+                data: JSON.stringify({
+                  from: "open",
+                  course: input.course ?? null,
+                  item_count: sendIds.length,
+                }),
+                idempotency_key: null,
+                actor_user_id: auth.userId,
+                created_at: now,
+              })
+              .execute();
+          }
+        }
 
         if (table) {
           await trx
@@ -510,7 +565,7 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     ]);
 
     const now = new Date().toISOString();
-    const { itemRows, modifierRows } = buildItemRows(
+    const { itemRows, modifierRows, itemIds } = buildItemRows(
       auth.tenantId,
       order.id,
       lines,
@@ -556,6 +611,59 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
             created_at: now,
           })
           .execute();
+
+        if (input.send) {
+          const existingSendIds = order.items
+            .filter(
+              (item) =>
+                item.status === "pending" &&
+                (!input.course || item.course === input.course),
+            )
+            .map((item) => item.id);
+          const newSendIds = lines.flatMap((line, index) =>
+            !input.course || line.item.course === input.course
+              ? [itemIds[index]!]
+              : [],
+          );
+          const sendIds = [...existingSendIds, ...newSendIds];
+
+          if (sendIds.length) {
+            await trx
+              .updateTable("orders")
+              .set({
+                ...(order.status === "open" ? { status: "sent" } : {}),
+                updated_at: now,
+              })
+              .where("id", "=", order.id)
+              .where("tenant_id", "=", auth.tenantId)
+              .execute();
+
+            await trx
+              .updateTable("order_items")
+              .set({ status: "sent" })
+              .where("id", "in", sendIds)
+              .where("tenant_id", "=", auth.tenantId)
+              .execute();
+
+            await trx
+              .insertInto("order_events")
+              .values({
+                id: newId(),
+                tenant_id: auth.tenantId,
+                order_id: order.id,
+                type: "sent",
+                data: JSON.stringify({
+                  from: order.status,
+                  course: input.course ?? null,
+                  item_count: sendIds.length,
+                }),
+                idempotency_key: null,
+                actor_user_id: auth.userId,
+                created_at: now,
+              })
+              .execute();
+          }
+        }
       });
     } catch (error) {
       if (input.idempotency_key) {
