@@ -95,5 +95,6 @@ discount/tip math, splits, void reasons, 80mm receipts, a retryable print queue
 and drawer kick are in place. Phase 3 adds idempotent cash, manual M-Pesa and
 PDQ standalone capture with confirmation, reversal and reconciliation. Daraja
 STK Push with encrypted per-tenant credentials and callback confirmation is in
-place. KDS station routing, live SSE tickets and reprints are live. Integrated
-PDQ is the remaining Phase 3 item in `docs/TASKS.md`.
+place. KDS station routing, live SSE tickets and reprints are live. Phase 5 adds
+role-gated discounts/voids, clock-in/out, per-staff sales, Z-reports and CSV
+export. Integrated PDQ remains queued in `docs/TASKS.md`.

@@ -28,6 +28,7 @@ import { registerMenuRoutes } from "./menu.js";
 import { registerOrderRoutes } from "./orders.js";
 import { registerPaymentRoutes } from "./payments.js";
 import { registerPrintRoutes } from "./print.js";
+import { registerShiftRoutes } from "./shifts.js";
 
 export interface EdgeAppOptions {
   db: Db;
@@ -66,7 +67,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 10, build }),
+    context.json({ app: version, edge: version, schema: 11, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -237,6 +238,7 @@ export function createEdgeApp({
   registerPrintRoutes(app, db);
   registerPaymentRoutes(app, db);
   registerKdsRoutes(app, db);
+  registerShiftRoutes(app, db);
 
   if (webDist !== null) {
     const dist =

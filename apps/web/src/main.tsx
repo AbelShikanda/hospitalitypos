@@ -164,6 +164,35 @@ type KdsTicket = {
   items: Order["items"];
 };
 
+type Shift = {
+  id: string;
+  venue_id: string;
+  user_id: string;
+  status: string;
+  starting_cash_minor: number;
+  counted_cash_minor: number | null;
+  notes: string | null;
+  clock_in_at: string;
+  clock_out_at: string | null;
+};
+
+type ShiftReport = {
+  shift: Shift;
+  sales: {
+    orders: number;
+    gross_minor: number;
+    discounts_minor: number;
+    net_minor: number;
+  };
+  payment_mix: Array<{ method: string; minor: number }>;
+  cash: {
+    starting_minor: number;
+    expected_minor: number;
+    counted_minor: number;
+    variance_minor: number;
+  };
+};
+
 type ReconciliationRow = {
   method: string;
   attempts: number;
@@ -182,6 +211,8 @@ type Order = {
   total_minor: number;
   table_id: string | null;
   notes: string | null;
+  discount_minor: number;
+  discount_reason: string | null;
   items: Array<{
     id: string;
     item_id: string;
@@ -214,6 +245,7 @@ const NAV_ITEMS = [
   "KDS",
   "Stock",
   "Reports",
+  "Shifts",
   "Settings",
 ] as const;
 
@@ -745,6 +777,8 @@ function OrderBuilder({
       total_minor: (existingOrder?.total_minor ?? 0) + newTotals.totalMinor,
       table_id: table.id,
       notes: notes.trim() || existingOrder?.notes || null,
+      discount_minor: existingOrder?.discount_minor ?? 0,
+      discount_reason: existingOrder?.discount_reason ?? null,
       items: [...(existingOrder?.items ?? []), ...newItems],
     };
   }
@@ -1445,6 +1479,7 @@ function BillView({
   const [tipMajor, setTipMajor] = useState("0");
   const [splitCount, setSplitCount] = useState(1);
   const [voidReason, setVoidReason] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [report, setReport] = useState<ReconciliationRow[]>([]);
   const [payMethod, setPayMethod] = useState("cash");
@@ -1542,6 +1577,7 @@ function BillView({
         taxRate: item.tax_rate,
       })),
       {
+        discountMinor: order.discount_minor,
         discountPercent,
         tipMinor: toMinor(Number(tipMajor) || 0),
       },
@@ -1617,6 +1653,27 @@ function BillView({
     });
     setNotice(`${order.number} void queued.`);
     setVoidReason("");
+  }
+
+  function applyDiscount() {
+    if (!order || discountReason.trim().length < 3) return;
+    const amount = Math.round((order.total_minor * discountPercent) / 100);
+    if (amount <= 0) {
+      setError("Enter a discount percentage.");
+      return;
+    }
+    enqueueOutbox({
+      url: `/api/orders/${order.id}/discount`,
+      body: {
+        discount_minor: amount,
+        reason: discountReason.trim(),
+        idempotency_key: crypto.randomUUID(),
+      },
+    });
+    setNotice("Discount queued.");
+    setDiscountReason("");
+    setDiscountPercent(0);
+    setError("");
   }
 
   function recordPayment() {
@@ -1759,6 +1816,23 @@ function BillView({
                 />
               </label>
             </div>
+            {canVoid ? (
+              <div className="void-controls">
+                <input
+                  value={discountReason}
+                  placeholder="Discount reason"
+                  onChange={(event) => setDiscountReason(event.target.value)}
+                />
+                <button
+                  className="theme-button"
+                  type="button"
+                  disabled={discountReason.trim().length < 3}
+                  onClick={applyDiscount}
+                >
+                  Apply discount
+                </button>
+              </div>
+            ) : null}
             <div className="cart-summary bill-summary">
               <div>
                 <span>Gross</span>
@@ -2190,6 +2264,264 @@ function KdsView({ venueId }: { venueId: string }) {
   );
 }
 
+function ShiftsView({
+  venueId,
+  role,
+}: {
+  venueId: string;
+  role: Role;
+}) {
+  const [active, setActive] = useState<Shift | null>(null);
+  const [history, setHistory] = useState<Shift[]>([]);
+  const [startingCash, setStartingCash] = useState("0");
+  const [countedCash, setCountedCash] = useState("0");
+  const [closeNotes, setCloseNotes] = useState("");
+  const [report, setReport] = useState<ShiftReport | null>(null);
+  const [notice, setNotice] = useState("");
+  const canClose = role === "owner" || role === "manager" || role === "cashier";
+
+  async function refresh() {
+    try {
+      const [activeResponse, historyResponse] = await Promise.all([
+        fetch(`/api/shifts/active?venue_id=${encodeURIComponent(venueId)}`, {
+          credentials: "same-origin",
+        }),
+        fetch(`/api/shifts?venue_id=${encodeURIComponent(venueId)}`, {
+          credentials: "same-origin",
+        }),
+      ]);
+      if (!activeResponse.ok || !historyResponse.ok) {
+        throw new Error("shifts failed");
+      }
+      setActive((await activeResponse.json()) as Shift | null);
+      setHistory((await historyResponse.json()) as Shift[]);
+    } catch {
+      setNotice("Could not load shifts.");
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [venueId]);
+
+  useEffect(
+    () =>
+      subscribeOutbox((count) => {
+        if (count === 0) void refresh();
+      }),
+    [venueId],
+  );
+
+  async function loadReport(shiftId: string) {
+    try {
+      const response = await fetch(`/api/shifts/${shiftId}/report`, {
+        credentials: "same-origin",
+      });
+      if (!response.ok) throw new Error("report failed");
+      setReport((await response.json()) as ShiftReport);
+    } catch {
+      setNotice("Could not load the shift report.");
+    }
+  }
+
+  function clockIn() {
+    enqueueOutbox({
+      url: "/api/shifts/clock-in",
+      body: {
+        venue_id: venueId,
+        starting_cash_minor: toMinor(Number(startingCash) || 0),
+      },
+    });
+    setNotice("Clock-in queued.");
+  }
+
+  function clockOut() {
+    if (!active) return;
+    enqueueOutbox({
+      url: `/api/shifts/${active.id}/clock-out`,
+      body: {
+        counted_cash_minor: toMinor(Number(countedCash) || 0),
+        ...(closeNotes.trim() ? { notes: closeNotes.trim() } : {}),
+      },
+    });
+    setNotice("Clock-out queued.");
+    setCloseNotes("");
+  }
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Staff</span>
+          <h1>Shifts</h1>
+          <p className="muted">
+            Clock in, balance cash and close a Z-report at the end of service.
+          </p>
+        </div>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+
+      <div className="bill-grid">
+        <section className="card bill-card">
+          <header className="area-head">
+            <h2>{active ? "Active shift" : "Start a shift"}</h2>
+            <span>{active ? "open" : "no open shift"}</span>
+          </header>
+          {active ? (
+            <>
+              <p className="muted">
+                Clocked in {new Date(active.clock_in_at).toLocaleString("en-KE")}
+              </p>
+              <div className="bill-controls">
+                <label>
+                  <span>Counted cash (KES)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={countedCash}
+                    onChange={(event) => setCountedCash(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Notes</span>
+                  <input
+                    value={closeNotes}
+                    onChange={(event) => setCloseNotes(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="builder-actions">
+                <button
+                  className="theme-button"
+                  type="button"
+                  onClick={() => void loadReport(active.id)}
+                >
+                  View report
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  disabled={!canClose}
+                  onClick={clockOut}
+                >
+                  Clock out
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bill-controls">
+                <label>
+                  <span>Starting cash (KES)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={startingCash}
+                    onChange={(event) => setStartingCash(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="builder-actions">
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={clockIn}
+                >
+                  Clock in
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="card receipt-preview">
+          <header className="area-head">
+            <h2>Shift history</h2>
+            <span>{history.length} shifts</span>
+          </header>
+          <div className="split-list">
+            {history.length === 0 ? (
+              <p className="muted">No shifts yet.</p>
+            ) : (
+              history.map((shift) => (
+                <button
+                  className="shift-row"
+                  key={shift.id}
+                  type="button"
+                  onClick={() => void loadReport(shift.id)}
+                >
+                  <span>
+                    {new Date(shift.clock_in_at).toLocaleString("en-KE")}
+                    <small>{shift.status}</small>
+                  </span>
+                  <strong>
+                    {money(shift.counted_cash_minor ?? shift.starting_cash_minor)}
+                  </strong>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      {report ? (
+        <section className="card bill-card shift-report">
+          <header className="area-head">
+            <h2>Z-report</h2>
+            <a
+              className="theme-button"
+              href={`/api/shifts/${report.shift.id}/export`}
+            >
+              Export CSV
+            </a>
+          </header>
+          <div className="cart-summary bill-summary">
+            <div>
+              <span>Orders</span>
+              <span>{report.sales.orders}</span>
+            </div>
+            <div>
+              <span>Gross</span>
+              <span>{money(report.sales.gross_minor)}</span>
+            </div>
+            <div>
+              <span>Discounts</span>
+              <span>-{money(report.sales.discounts_minor)}</span>
+            </div>
+            <div>
+              <span>Net</span>
+              <span>{money(report.sales.net_minor)}</span>
+            </div>
+            <div>
+              <span>Expected cash</span>
+              <span>{money(report.cash.expected_minor)}</span>
+            </div>
+            <div>
+              <span>Counted cash</span>
+              <span>{money(report.cash.counted_minor)}</span>
+            </div>
+            <div className="cart-total">
+              <span>Variance</span>
+              <strong>{money(report.cash.variance_minor)}</strong>
+            </div>
+          </div>
+          <div className="split-list">
+            {report.payment_mix.map((row) => (
+              <div key={row.method}>
+                <span>{row.method}</span>
+                <strong>{money(row.minor)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -2395,6 +2727,8 @@ function App() {
           />
         ) : view === "KDS" ? (
           <KdsView venueId={venueId} />
+        ) : view === "Shifts" ? (
+          <ShiftsView venueId={venueId} role={session?.role ?? "waiter"} />
         ) : (
           <Placeholder view={view} />
         )}

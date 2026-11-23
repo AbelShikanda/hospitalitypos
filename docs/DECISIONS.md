@@ -802,6 +802,30 @@ normal HTTP. Multi-process edge deployments would need a shared event bus.
 
 ---
 
+## ADR-030 — Shifts scope sales attribution and cash balancing
+
+**Status:** Accepted
+
+**Context:** Owners need to know who sold what and whether the cash drawer
+balances at the end of a service, without a cloud service or spreadsheets.
+
+**Decision:**
+
+- A shift is opened by one staff member per venue; the edge rejects a second
+  open shift for the same user and venue.
+- Orders store `opened_by` and payments store `created_by`; the Z-report scopes
+  both to the shift window and the staff member.
+- Discounts, order voids, payment reversals and order close are role-gated.
+  Discounts persist on the order with a reason and an audit event.
+- Cash variance is counted cash minus confirmed cash payments. CSV export
+  includes only non-sensitive payment references.
+
+**Consequences:** Shift reports are reproducible from append-only order and
+payment history. Multi-staff venues create one shift per staff member; a
+manager can close another staff member's shift.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

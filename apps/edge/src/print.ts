@@ -97,6 +97,7 @@ export function registerPrintRoutes(app: Hono<AppEnv>, db: Db) {
         taxRate: item.tax_rate,
       })),
       {
+        discountMinor: order.discount_minor,
         discountPercent: input.discount_percent,
         tipMinor: input.tip_minor,
       },

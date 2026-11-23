@@ -1334,6 +1334,130 @@ describe("menu, floor and orders", () => {
     await expect(printed.json()).resolves.toMatchObject({ type: "kitchen" });
   });
 
+  it("enforces role checks for discounts and order close", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha", "waiter");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const discount = await app.request(`/api/orders/${order.id}/discount`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        discount_minor: 5000,
+        reason: "Regular customer",
+      }),
+    });
+    expect(discount.status).toBe(403);
+
+    const closed = await app.request(`/api/orders/${order.id}/status`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ status: "closed" }),
+    });
+    expect(closed.status).toBe(403);
+  });
+
+  it("tracks shifts with a Z-report and CSV export", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const clockIn = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        starting_cash_minor: 10000,
+      }),
+    });
+    expect(clockIn.status).toBe(201);
+    const shift = (await clockIn.json()) as { id: string };
+
+    const duplicate = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ venue_id: fixture.venueId }),
+    });
+    expect(duplicate.status).toBe(409);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const payment = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 1000,
+        idempotency_key: "shift-cash-001",
+      }),
+    });
+    expect(payment.status).toBe(201);
+
+    const clockOut = await app.request(`/api/shifts/${shift.id}/clock-out`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ counted_cash_minor: 11000 }),
+    });
+    expect(clockOut.status).toBe(200);
+
+    const reportResponse = await app.request(`/api/shifts/${shift.id}/report`, {
+      headers: { cookie },
+    });
+    expect(reportResponse.status).toBe(200);
+    const report = (await reportResponse.json()) as {
+      sales: { orders: number };
+      cash: { expected_minor: number; variance_minor: number };
+    };
+    expect(report.sales.orders).toBe(1);
+    expect(report.cash.expected_minor).toBe(1000);
+    expect(report.cash.variance_minor).toBe(10000);
+
+    const csv = await app.request(`/api/shifts/${shift.id}/export`, {
+      headers: { cookie },
+    });
+    expect(csv.status).toBe(200);
+    expect(await csv.text()).toContain("cash");
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

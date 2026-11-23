@@ -1191,6 +1191,37 @@
   margin-top: 16px;
 }
 
+.shift-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shift-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.shift-row small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.shift-report {
+  margin-top: 18px;
+}
+
 .kds-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

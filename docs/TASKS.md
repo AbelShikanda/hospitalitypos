@@ -161,11 +161,11 @@ payment; all reconcile in reports; all idempotent.
 **Exit:** Staff clock in, sell under their PIN, and a manager closes a shift with a
 Z-report that balances.
 
-- [ ] RBAC enforcement on sensitive actions (voids, discounts, refunds, close).
-- [ ] Clock-in/out; active shift per staff per venue.
-- [ ] Per-staff sales attribution.
-- [ ] Shift close: cash counted vs expected, payment breakdown, Z-report.
-- [ ] Shift history + export.
+- [x] RBAC enforcement on sensitive actions (voids, discounts, refunds, close).
+- [x] Clock-in/out; active shift per staff per venue.
+- [x] Per-staff sales attribution on orders and payments.
+- [x] Shift close: cash counted vs expected, payment breakdown, Z-report.
+- [x] Shift history + CSV export.
 
 ---
 

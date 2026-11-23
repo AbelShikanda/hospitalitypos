@@ -1,5 +1,6 @@
 import {
   addOrderItemsSchema,
+  applyDiscountSchema,
   createOrderSchema,
   mergeOrderSchema,
   moveOrderSchema,
@@ -16,7 +17,7 @@ import {
   type OrderState,
 } from "@hpos/domain";
 import type { Hono } from "hono";
-import { requireAuth, type AppEnv } from "./auth.js";
+import { requireAuth, requireRole, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
 import { publishEvent } from "./events.js";
 
@@ -419,6 +420,8 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
             tax_minor: totals.taxMinor,
             total_minor: totals.totalMinor,
             notes: input.notes ?? null,
+            discount_minor: 0,
+            discount_reason: null,
             idempotency_key: input.idempotency_key ?? null,
             opened_by: auth.userId,
             created_at: now,
@@ -1095,6 +1098,79 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json(result);
   });
 
+  app.post(
+    "/api/orders/:id/discount",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
+      const body = await context.req.json().catch(() => null);
+      const parsed = applyDiscountSchema.safeParse(body);
+      if (!parsed.success) {
+        return context.json({ error: "invalid_input" }, 400);
+      }
+
+      const auth = context.get("auth");
+      const input = parsed.data;
+      const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
+      if (!order) return context.json({ error: "order_not_found" }, 404);
+      if (order.status === "closed" || order.status === "voided") {
+        return context.json({ error: "order_closed" }, 409);
+      }
+      if (input.discount_minor > order.total_minor) {
+        return context.json({ error: "discount_too_large" }, 409);
+      }
+
+      if (input.idempotency_key) {
+        const existingEvent = await db
+          .selectFrom("order_events")
+          .select("order_id")
+          .where("tenant_id", "=", auth.tenantId)
+          .where("idempotency_key", "=", input.idempotency_key)
+          .executeTakeFirst();
+        if (existingEvent) {
+          if (existingEvent.order_id !== order.id) {
+            return context.json({ error: "idempotency_conflict" }, 409);
+          }
+          return context.json(order, 200);
+        }
+      }
+
+      const now = new Date().toISOString();
+      await db.transaction().execute(async (trx) => {
+        await trx
+          .updateTable("orders")
+          .set({
+            discount_minor: input.discount_minor,
+            discount_reason: input.reason,
+            updated_at: now,
+          })
+          .where("id", "=", order.id)
+          .where("tenant_id", "=", auth.tenantId)
+          .execute();
+        await trx
+          .insertInto("order_events")
+          .values({
+            id: newId(),
+            tenant_id: auth.tenantId,
+            order_id: order.id,
+            type: "discounted",
+            data: JSON.stringify({
+              discount_minor: input.discount_minor,
+              reason: input.reason,
+            }),
+            idempotency_key: input.idempotency_key ?? null,
+            actor_user_id: auth.userId,
+            created_at: now,
+          })
+          .execute();
+      });
+
+      const result = await loadOrder(db, auth.tenantId, order.id);
+      if (result) emitOrderEvent("order_discounted", result);
+      return context.json(result);
+    },
+  );
+
   app.post("/api/orders/:id/status", requireAuth(db), async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = updateOrderStatusSchema.safeParse(body);
@@ -1105,6 +1181,12 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const auth = context.get("auth");
     const { status: next, reason } = parsed.data;
     if (next === "voided" && !["owner", "manager"].includes(auth.role)) {
+      return context.json({ error: "forbidden" }, 403);
+    }
+    if (
+      next === "closed" &&
+      !["owner", "manager", "cashier"].includes(auth.role)
+    ) {
       return context.json({ error: "forbidden" }, 403);
     }
 

@@ -141,6 +141,8 @@ export interface OrdersTable {
   tax_minor: number;
   total_minor: number;
   notes: string | null;
+  discount_minor: number;
+  discount_reason: string | null;
   idempotency_key: string | null;
   opened_by: string | null;
   created_at: Timestamp;
@@ -183,6 +185,23 @@ export interface OrderEventsTable {
   idempotency_key: string | null;
   actor_user_id: string | null;
   created_at: Timestamp;
+}
+
+export interface ShiftsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  user_id: string;
+  status: string;
+  starting_cash_minor: number;
+  counted_cash_minor: number | null;
+  notes: string | null;
+  opened_by: string;
+  closed_by: string | null;
+  clock_in_at: Timestamp;
+  clock_out_at: Timestamp | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
 }
 
 export interface PaymentsTable {
@@ -262,4 +281,5 @@ export interface Database {
   payments: PaymentsTable;
   payment_events: PaymentEventsTable;
   payment_credentials: PaymentCredentialsTable;
+  shifts: ShiftsTable;
 }

@@ -604,6 +604,55 @@ const stations: Migration = {
   },
 };
 
+const shiftsAndDiscounts: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("shifts")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("user_id", "char(26)", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) =>
+        column.notNull().defaultTo("open"),
+      )
+      .addColumn("starting_cash_minor", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("counted_cash_minor", "integer")
+      .addColumn("notes", "text")
+      .addColumn("opened_by", "char(26)", (column) => column.notNull())
+      .addColumn("closed_by", "char(26)")
+      .addColumn("clock_in_at", "timestamp", (column) => column.notNull())
+      .addColumn("clock_out_at", "timestamp")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .alterTable("orders")
+      .addColumn("discount_minor", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+
+    await db.schema.alterTable("orders").addColumn("discount_reason", "text").execute();
+
+    await db.schema
+      .createIndex("shifts_tenant_venue_status_idx")
+      .ifNotExists()
+      .on("shifts")
+      .columns(["tenant_id", "venue_id", "status"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.alterTable("orders").dropColumn("discount_reason").execute();
+    await db.schema.alterTable("orders").dropColumn("discount_minor").execute();
+    await db.schema.dropTable("shifts").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -615,6 +664,7 @@ const migrations: Record<string, Migration> = {
   "008_payments": payments,
   "009_payment_credentials": paymentCredentials,
   "010_stations": stations,
+  "011_shifts_discounts": shiftsAndDiscounts,
 };
 
 export const migrationProvider: MigrationProvider = {

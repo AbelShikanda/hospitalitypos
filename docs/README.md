@@ -44,8 +44,8 @@ humans and AI coding agents.
 
 ## Status
 
-Project is at **Phase 3 — Payments** (with Phase 0b distribution tracked
-alongside it). The web, edge and cloud apps run locally;
+Project is at **Phase 5 — Staff, roles and shifts** (with Phase 0b distribution
+tracked alongside it). The web, edge and cloud apps run locally;
 the edge serves the PWA. Edge PIN auth, revocable sessions and tenant isolation
 are in place. Phase 1 core is complete: menu, floor plan, order taking and
 send-to-kitchen work end to end on the local edge. Order mutations are
@@ -56,5 +56,6 @@ reasons, 80mm receipts, a retryable print queue and drawer kick. Phase 3 adds
 idempotent cash, manual M-Pesa and PDQ standalone capture with confirmation,
 reversal and reconciliation. Daraja STK Push uses encrypted per-tenant
 credentials with callback confirmation. KDS station routing uses SSE for live
-tickets and supports reprints. Integrated PDQ remains queued. See `TASKS.md`
-for the live checklist.
+tickets and supports reprints. Phase 5 adds role-gated discounts/voids,
+clock-in/out, per-staff sales, Z-reports and CSV export. Integrated PDQ remains
+queued. See `TASKS.md` for the live checklist.

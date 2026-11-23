@@ -127,6 +127,34 @@ export const createPaymentSchema = z
     }
   });
 
+export const clockInSchema = z.object({
+  venue_id: ulid,
+  starting_cash_minor: z.number().int().nonnegative().default(0),
+});
+
+export const clockOutSchema = z.object({
+  counted_cash_minor: z.number().int().nonnegative(),
+  notes: z.string().max(500).optional(),
+});
+
+export const applyDiscountSchema = z.object({
+  discount_minor: z.number().int().positive(),
+  reason: z.string().min(3).max(500),
+  idempotency_key: z.string().min(8).max(128).optional(),
+});
+
+export const shiftSchema = z.object({
+  id: ulid,
+  venue_id: ulid,
+  user_id: ulid,
+  status: z.string(),
+  starting_cash_minor: z.number().int().nonnegative(),
+  counted_cash_minor: z.number().int().nonnegative().nullable(),
+  notes: z.string().nullable(),
+  clock_in_at: z.string(),
+  clock_out_at: z.string().nullable(),
+});
+
 export const darajaCredentialsSchema = z.object({
   environment: z.enum(["sandbox", "production"]),
   consumer_key: z.string().min(4).max(256),
@@ -397,6 +425,8 @@ export const orderSchema = z.object({
   tax_minor: z.number().int().nonnegative(),
   total_minor: z.number().int().nonnegative(),
   notes: z.string().nullable(),
+  discount_minor: z.number().int().nonnegative().default(0),
+  discount_reason: z.string().nullable().optional(),
   idempotency_key: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -442,6 +472,10 @@ export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
 export type PdqMode = z.infer<typeof pdqModeSchema>;
 export type CreatePayment = z.infer<typeof createPaymentSchema>;
 export type Payment = z.infer<typeof paymentSchema>;
+export type ClockIn = z.infer<typeof clockInSchema>;
+export type ClockOut = z.infer<typeof clockOutSchema>;
+export type ApplyDiscount = z.infer<typeof applyDiscountSchema>;
+export type Shift = z.infer<typeof shiftSchema>;
 export type DarajaCredentials = z.infer<typeof darajaCredentialsSchema>;
 export type CredentialSummary = z.infer<typeof credentialSummarySchema>;
 export type UpdatePaymentStatus = z.infer<typeof updatePaymentStatusSchema>;
