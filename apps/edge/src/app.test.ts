@@ -1012,6 +1012,63 @@ describe("menu, floor and orders", () => {
     expect(replay.status).toBe(200);
   });
 
+  it("queues a receipt print job once for a given idempotency key", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const payload = {
+      order_id: order.id,
+      discount_percent: 10,
+      tip_minor: 5000,
+      kick_drawer: true,
+      idempotency_key: "print-key-0001",
+    };
+
+    const first = await app.request("/api/print/receipt", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(first.status).toBe(201);
+    const job = (await first.json()) as { id: string };
+
+    const replay = await app.request("/api/print/receipt", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ id: job.id });
+
+    const jobs = await app.request(
+      `/api/print/jobs?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const jobList = (await jobs.json()) as Array<{ id: string }>;
+    expect(jobList).toHaveLength(1);
+  });
+
   it("keeps menu and orders isolated between tenants", async () => {
     const db = await makeDb();
     const alpha = await addTenant(db, "Alpha");

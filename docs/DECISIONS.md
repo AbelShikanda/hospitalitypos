@@ -702,6 +702,32 @@ records. Failed requests stay queued and are surfaced through the queued count.
 
 ---
 
+## ADR-026 — VAT-inclusive bills, untaxed tips and queued receipts
+
+**Status:** Accepted
+
+**Context:** Bills need discounts, tips and splits without losing the VAT
+breakdown, and printers are optional local hardware that can be offline.
+
+**Decision:**
+
+- Discounts are allocated across VAT-inclusive lines by gross value using a
+  largest-remainder method; VAT is re-derived per discounted line in
+  `packages/domain`.
+- Tips are added after tax and are not taxed. Splits use deterministic
+  remainder allocation so the parts always sum to the payable amount.
+- Receipts are rendered as 80mm text and ESC/POS bytes in `packages/domain`.
+- The edge enqueues print jobs in SQLite and sends ESC/POS bytes to a raw TCP
+  printer (`PRINTER_HOST`/`PRINTER_PORT`). Drawer kick is an ESC/POS pulse.
+- Failed jobs stay visible in the PWA and can be retried without reprinting
+  successful jobs.
+
+**Consequences:** Bill math is testable without a printer. A missing printer
+does not block selling; it produces a visible failed job. Station routing and
+item/seat splits remain open for the KDS milestone.
+
+---
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/

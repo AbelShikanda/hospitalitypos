@@ -90,5 +90,7 @@ Phase 0 foundation and edge authentication are complete. Phase 1 core is
 complete: menu, floor plan, order taking and send-to-kitchen work end to end on
 the local edge. Order mutations are idempotent; tabs can be reopened, moved,
 merged, annotated and fired by course. PWA writes are optimistic and queued
-locally with automatic retry. Payments, billing and printing are designed and
-queued in `docs/TASKS.md`.
+locally with automatic retry. Phase 2 billing is in progress: VAT-inclusive
+discount/tip math, splits, void reasons, 80mm receipts, a retryable print queue
+and drawer kick are in place. Payments and station routing are queued in
+`docs/TASKS.md`.

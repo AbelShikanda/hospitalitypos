@@ -420,6 +420,50 @@ const orderCourses: Migration = {
   },
 };
 
+const printJobs: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("print_jobs")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("order_id", "char(26)", (column) => column.notNull())
+      .addColumn("type", "varchar(20)", (column) => column.notNull())
+      .addColumn("payload", "text", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) =>
+        column.notNull().defaultTo("queued"),
+      )
+      .addColumn("attempts", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .addColumn("error", "text")
+      .addColumn("idempotency_key", "varchar(128)")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("print_jobs_tenant_idempotency_uidx")
+      .ifNotExists()
+      .on("print_jobs")
+      .columns(["tenant_id", "idempotency_key"])
+      .unique()
+      .execute();
+
+    await db.schema
+      .createIndex("print_jobs_tenant_status_idx")
+      .ifNotExists()
+      .on("print_jobs")
+      .columns(["tenant_id", "venue_id", "status"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("print_jobs").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -427,6 +471,7 @@ const migrations: Record<string, Migration> = {
   "004_order_idempotency": orderIdempotency,
   "005_order_event_idempotency": orderEventIdempotency,
   "006_order_courses": orderCourses,
+  "007_print_jobs": printJobs,
 };
 
 export const migrationProvider: MigrationProvider = {

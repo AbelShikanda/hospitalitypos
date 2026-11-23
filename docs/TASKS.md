@@ -111,16 +111,17 @@ data survives an edge-node restart.
 **Exit:** Split a bill three ways, apply VAT, print a receipt, kick the drawer —
 all with the internet unplugged.
 
-- [ ] Money/tax engine in `domain`: line totals, discounts, tips, VAT, rounding;
+- [x] Money/tax engine in `domain`: line totals, discounts, tips, VAT, rounding;
       exhaustive unit tests.
-- [ ] Bill view: subtotal, tax, discount, tip, total.
-- [ ] Split by item / by seat / by amount with deterministic remainder handling.
-- [ ] Void/comp with reason + role check + audit entry.
-- [ ] Receipt model + 80mm ESC/POS layout (header, items, tax, totals, footer).
-- [ ] Edge device bridge: printer connect, test print, print queue with retry.
-- [ ] Cash drawer kick via printer pulse.
+- [x] Bill view: subtotal, tax, discount, tip, total.
+- [x] Split by amount with deterministic remainder handling.
+- [ ] Split by item / by seat.
+- [x] Void/comp with reason + role check + audit entry.
+- [x] Receipt model + 80mm ESC/POS layout (header, items, tax, totals, footer).
+- [x] Edge device bridge: network printer, print queue with retry.
+- [x] Cash drawer kick via printer pulse.
 - [ ] Print routing: receipt printer vs kitchen/bar station.
-- [ ] Failed-print surfacing in UI (never silent).
+- [x] Failed-print surfacing in UI (never silent).
 
 ---
 

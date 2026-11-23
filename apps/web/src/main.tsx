@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { newId } from "@hpos/domain";
+import {
+  billTotals,
+  formatReceiptText,
+  newId,
+  splitBill,
+  toMinor,
+} from "@hpos/domain";
 import "@hpos/ui/styles/tokens.css";
 import "./styles.css";
 import {
@@ -121,6 +127,15 @@ type OrderSummary = {
   created_at: string;
 };
 
+type PrintJobSummary = {
+  id: string;
+  order_id: string;
+  status: "queued" | "sent" | "failed";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+};
+
 type Order = {
   id: string;
   number: string;
@@ -157,6 +172,7 @@ type Phase = "loading" | "login" | "ready" | "offline";
 const NAV_ITEMS = [
   "Tables",
   "Orders",
+  "Bill",
   "Menu",
   "KDS",
   "Stock",
@@ -1364,6 +1380,334 @@ function TablesView({ venueId }: { venueId: string }) {
   );
 }
 
+function BillView({
+  venueId,
+  venueName,
+  tenantName,
+  role,
+}: {
+  venueId: string;
+  venueName: string;
+  tenantName: string;
+  role: Role;
+}) {
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [jobs, setJobs] = useState<PrintJobSummary[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [order, setOrder] = useState<Order | null>(null);
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [tipMajor, setTipMajor] = useState("0");
+  const [splitCount, setSplitCount] = useState(1);
+  const [voidReason, setVoidReason] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [ordersResponse, jobsResponse] = await Promise.all([
+          fetch(`/api/orders?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+          fetch(`/api/print/jobs?venue_id=${encodeURIComponent(venueId)}`, {
+            credentials: "same-origin",
+          }),
+        ]);
+        if (!ordersResponse.ok || !jobsResponse.ok) {
+          throw new Error("billing load failed");
+        }
+        const data = (await ordersResponse.json()) as OrderSummary[];
+        const printJobs = (await jobsResponse.json()) as PrintJobSummary[];
+        if (cancelled) return;
+        setOrders(
+          data.filter(
+            (entry) => entry.status !== "closed" && entry.status !== "voided",
+          ),
+        );
+        setJobs(printJobs);
+      } catch {
+        if (!cancelled) setError("Could not load open bills.");
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [venueId, notice]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setOrder(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadOrder() {
+      try {
+        const response = await fetch(
+          `/api/orders/${encodeURIComponent(selectedId)}`,
+          { credentials: "same-origin" },
+        );
+        if (!response.ok) throw new Error("order failed");
+        const data = (await response.json()) as Order;
+        if (!cancelled) setOrder(data);
+      } catch {
+        if (!cancelled) setError("Could not load the bill.");
+      }
+    }
+    void loadOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  const bill = useMemo(() => {
+    if (!order) return null;
+    return billTotals(
+      order.items.map((item) => ({
+        id: item.id,
+        totalMinor: item.line_total_minor,
+        taxRate: item.tax_rate,
+      })),
+      {
+        discountPercent,
+        tipMinor: toMinor(Number(tipMajor) || 0),
+      },
+    );
+  }, [order, discountPercent, tipMajor]);
+
+  const receiptText = useMemo(() => {
+    if (!order || !bill) return "";
+    return formatReceiptText({
+      venueName: `${tenantName} · ${venueName}`,
+      orderNumber: order.number,
+      table: orders.find((entry) => entry.id === order.id)?.table_name ?? null,
+      lines: order.items.map((item) => ({
+        name: item.name,
+        quantity: item.quantity,
+        totalMinor: item.line_total_minor,
+        modifiers: item.modifiers.map((modifier) => modifier.name),
+      })),
+      bill,
+    });
+  }, [order, bill, orders, tenantName, venueName]);
+
+  function printReceipt(kickDrawer: boolean) {
+    if (!order) return;
+    enqueueOutbox({
+      url: "/api/print/receipt",
+      body: {
+        order_id: order.id,
+        discount_percent: discountPercent,
+        tip_minor: toMinor(Number(tipMajor) || 0),
+        kick_drawer: kickDrawer,
+        idempotency_key: crypto.randomUUID(),
+      },
+    });
+    setNotice(kickDrawer ? "Receipt queued with drawer kick." : "Receipt queued.");
+  }
+
+  function retryPrint(jobId: string) {
+    enqueueOutbox({
+      url: `/api/print/jobs/${jobId}/retry`,
+      body: {},
+    });
+    setNotice("Print retry queued.");
+  }
+
+  function voidOrder() {
+    if (!order || voidReason.trim().length < 3) return;
+    enqueueOutbox({
+      url: `/api/orders/${order.id}/status`,
+      body: {
+        status: "voided",
+        reason: voidReason.trim(),
+        idempotency_key: crypto.randomUUID(),
+      },
+    });
+    setNotice(`${order.number} void queued.`);
+    setVoidReason("");
+  }
+
+  const splits = bill ? splitBill(bill.payableMinor, Math.max(1, splitCount)) : [];
+  const canVoid = role === "owner" || role === "manager";
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Billing</span>
+          <h1>Bill</h1>
+          <p className="muted">
+            Apply discounts and tips, split the bill and queue a receipt.
+          </p>
+        </div>
+        <select
+          className="bill-select"
+          value={selectedId}
+          onChange={(event) => setSelectedId(event.target.value)}
+        >
+          <option value="">Choose an open bill</option>
+          {orders.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.number} · {entry.table_name ?? "Takeaway"} ·{" "}
+              {money(entry.total_minor)}
+            </option>
+          ))}
+        </select>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      {!order || !bill ? (
+        <section className="card empty-state">
+          <h2>No bill selected</h2>
+          <p className="muted">Choose an open bill to see totals and splits.</p>
+        </section>
+      ) : (
+        <div className="bill-grid">
+          <section className="card bill-card">
+            <header className="area-head">
+              <h2>{order.number}</h2>
+              <span>{order.table_id ? "Table" : "Takeaway"}</span>
+            </header>
+            <div className="bill-controls">
+              <label>
+                <span>Discount %</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={discountPercent}
+                  onChange={(event) =>
+                    setDiscountPercent(Math.max(0, Number(event.target.value) || 0))
+                  }
+                />
+              </label>
+              <label>
+                <span>Tip (KES)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={tipMajor}
+                  onChange={(event) => setTipMajor(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Splits</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={splitCount}
+                  onChange={(event) =>
+                    setSplitCount(Math.max(1, Number(event.target.value) || 1))
+                  }
+                />
+              </label>
+            </div>
+            <div className="cart-summary bill-summary">
+              <div>
+                <span>Gross</span>
+                <span>{money(bill.grossMinor)}</span>
+              </div>
+              <div>
+                <span>Discount</span>
+                <span>-{money(bill.discountMinor)}</span>
+              </div>
+              <div>
+                <span>VAT</span>
+                <span>{money(bill.taxMinor)}</span>
+              </div>
+              <div>
+                <span>Tip</span>
+                <span>{money(bill.tipMinor)}</span>
+              </div>
+              <div className="cart-total">
+                <span>Payable</span>
+                <strong>{money(bill.payableMinor)}</strong>
+              </div>
+            </div>
+            <div className="split-list">
+              {splits.map((amount, index) => (
+                <div key={index}>
+                  <span>Split {index + 1}</span>
+                  <strong>{money(amount)}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="builder-actions">
+              <button
+                className="theme-button"
+                type="button"
+                onClick={() => printReceipt(false)}
+              >
+                Print receipt
+              </button>
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => printReceipt(true)}
+              >
+                Print + drawer
+              </button>
+            </div>
+            {canVoid ? (
+              <div className="void-controls">
+                <input
+                  value={voidReason}
+                  placeholder="Void reason"
+                  onChange={(event) => setVoidReason(event.target.value)}
+                />
+                <button
+                  className="theme-button"
+                  type="button"
+                  disabled={voidReason.trim().length < 3}
+                  onClick={voidOrder}
+                >
+                  Void order
+                </button>
+              </div>
+            ) : null}
+
+            {jobs.some((job) => job.status === "failed") ? (
+              <div className="print-failures">
+                <span className="eyebrow">Print failures</span>
+                {jobs
+                  .filter((job) => job.status === "failed")
+                  .map((job) => (
+                    <div key={job.id}>
+                      <span>
+                        {job.error ?? "print_failed"} · {job.attempts} attempts
+                      </span>
+                      <button
+                        className="theme-button"
+                        type="button"
+                        onClick={() => retryPrint(job.id)}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="card receipt-preview">
+            <header className="area-head">
+              <h2>Receipt</h2>
+              <span>80mm</span>
+            </header>
+            <pre>{receiptText}</pre>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -1560,6 +1904,13 @@ function App() {
       <main className="content">
         {view === "Tables" ? (
           <TablesView venueId={venueId} />
+        ) : view === "Bill" ? (
+          <BillView
+            venueId={venueId}
+            venueName={venueName}
+            tenantName={bootstrap?.tenant.name ?? "Hospitality POS"}
+            role={session?.role ?? "waiter"}
+          />
         ) : (
           <Placeholder view={view} />
         )}

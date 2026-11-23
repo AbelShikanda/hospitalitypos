@@ -3,7 +3,7 @@ import {
   createOrderSchema,
   mergeOrderSchema,
   moveOrderSchema,
-  orderStatusSchema,
+  updateOrderStatusSchema,
   sendOrderSchema,
   type CreateOrderItem,
 } from "@hpos/contracts";
@@ -19,7 +19,7 @@ import type { Hono } from "hono";
 import { requireAuth, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
 
-async function loadOrder(db: Db, tenantId: string, orderId: string) {
+export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   const order = await db
     .selectFrom("orders")
     .selectAll()
@@ -1069,17 +1069,13 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
 
   app.post("/api/orders/:id/status", requireAuth(db), async (context) => {
     const body = await context.req.json().catch(() => null);
-    const parsed = orderStatusSchema.safeParse(
-      body && typeof body === "object" && "status" in body
-        ? (body as { status: unknown }).status
-        : null,
-    );
+    const parsed = updateOrderStatusSchema.safeParse(body);
     if (!parsed.success) {
       return context.json({ error: "invalid_input" }, 400);
     }
 
     const auth = context.get("auth");
-    const next = parsed.data;
+    const { status: next, reason } = parsed.data;
     if (next === "voided" && !["owner", "manager"].includes(auth.role)) {
       return context.json({ error: "forbidden" }, 403);
     }
@@ -1136,7 +1132,10 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
           tenant_id: auth.tenantId,
           order_id: order.id,
           type: next,
-          data: JSON.stringify({ from: order.status }),
+          data: JSON.stringify({
+            from: order.status,
+            ...(reason ? { reason } : {}),
+          }),
           idempotency_key: null,
           actor_user_id: auth.userId,
           created_at: now,

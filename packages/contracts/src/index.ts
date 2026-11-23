@@ -2,6 +2,25 @@ import { z } from "zod";
 
 export const ulid = z.string().length(26);
 
+export const printReceiptSchema = z.object({
+  order_id: ulid,
+  discount_percent: z.number().min(0).max(100).default(0),
+  tip_minor: z.number().int().nonnegative().default(0),
+  kick_drawer: z.boolean().default(false),
+  idempotency_key: z.string().min(8).max(128).optional(),
+});
+
+export const printJobSchema = z.object({
+  id: ulid,
+  order_id: ulid,
+  type: z.string(),
+  status: z.enum(["queued", "sent", "failed"]),
+  attempts: z.number().int(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const healthSchema = z.object({
   status: z.literal("ok"),
   mode: z.string(),
@@ -290,6 +309,21 @@ export const orderStatusSchema = z.enum([
   "voided",
 ]);
 
+export const updateOrderStatusSchema = z
+  .object({
+    status: orderStatusSchema,
+    reason: z.string().min(3).max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === "voided" && !value.reason) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "A reason is required when voiding an order",
+      });
+    }
+  });
+
 export const orderItemSchema = z.object({
   id: ulid,
   item_id: ulid,
@@ -328,6 +362,8 @@ export const orderSchema = z.object({
   items: z.array(orderItemSchema),
 });
 
+export type PrintReceipt = z.infer<typeof printReceiptSchema>;
+export type PrintJob = z.infer<typeof printJobSchema>;
 export type Health = z.infer<typeof healthSchema>;
 export type Version = z.infer<typeof versionSchema>;
 export type Tenant = z.infer<typeof tenantSchema>;
@@ -355,6 +391,7 @@ export type MoveOrder = z.infer<typeof moveOrderSchema>;
 export type MergeOrder = z.infer<typeof mergeOrderSchema>;
 export type Course = z.infer<typeof courseSchema>;
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
+export type UpdateOrderStatus = z.infer<typeof updateOrderStatusSchema>;
 export type OrderItem = z.infer<typeof orderItemSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;

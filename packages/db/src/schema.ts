@@ -174,6 +174,21 @@ export interface OrderEventsTable {
   created_at: Timestamp;
 }
 
+export interface PrintJobsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  order_id: string;
+  type: string;
+  payload: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  idempotency_key: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   venues: VenuesTable;
@@ -192,4 +207,5 @@ export interface Database {
   order_items: OrderItemsTable;
   order_item_modifiers: OrderItemModifiersTable;
   order_events: OrderEventsTable;
+  print_jobs: PrintJobsTable;
 }
