@@ -10,6 +10,8 @@ export type {
   Database,
   TenantsTable,
   VenuesTable,
+  VenueSettingsTable,
+  FeedbackTable,
   UsersTable,
   MembershipsTable,
   SessionsTable,

@@ -942,6 +942,105 @@ const cloudSync: Migration = {
   },
 };
 
+const venueSettingsAndFeedback: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("venue_settings")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)", (column) => column.notNull())
+      .addColumn("stock_enabled", "integer", (column) =>
+        column.notNull().defaultTo(1),
+      )
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("feedback")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("venue_id", "char(26)")
+      .addColumn("user_id", "char(26)", (column) => column.notNull())
+      .addColumn("category", "varchar(40)", (column) => column.notNull())
+      .addColumn("subject", "varchar(160)", (column) => column.notNull())
+      .addColumn("message", "text", (column) => column.notNull())
+      .addColumn("status", "varchar(20)", (column) =>
+        column.notNull().defaultTo("open"),
+      )
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .addColumn("updated_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("venue_settings_uidx")
+      .ifNotExists()
+      .on("venue_settings")
+      .columns(["tenant_id", "venue_id"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("feedback_tenant_venue_idx")
+      .ifNotExists()
+      .on("feedback")
+      .columns(["tenant_id", "venue_id", "created_at"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("feedback").ifExists().execute();
+    await db.schema.dropTable("venue_settings").ifExists().execute();
+  },
+};
+
+const housekeepingAndTips: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .alterTable("users")
+      .addColumn("is_active", "integer", (column) =>
+        column.notNull().defaultTo(1),
+      )
+      .execute();
+
+    await db.schema
+      .alterTable("venue_settings")
+      .addColumn("tip_enabled", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+    await db.schema
+      .alterTable("venue_settings")
+      .addColumn("tip_threshold_minor", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+    await db.schema
+      .alterTable("venue_settings")
+      .addColumn("tip_percent", "integer", (column) =>
+        column.notNull().defaultTo(0),
+      )
+      .execute();
+
+    await db.schema
+      .alterTable("shifts")
+      .addColumn("clock_in_notes", "text")
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.alterTable("shifts").dropColumn("clock_in_notes").execute();
+    await db.schema.alterTable("venue_settings").dropColumn("tip_percent").execute();
+    await db.schema
+      .alterTable("venue_settings")
+      .dropColumn("tip_threshold_minor")
+      .execute();
+    await db.schema.alterTable("venue_settings").dropColumn("tip_enabled").execute();
+    await db.schema.alterTable("users").dropColumn("is_active").execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -957,6 +1056,8 @@ const migrations: Record<string, Migration> = {
   "012_inventory": inventory,
   "013_payment_tips": paymentTips,
   "014_cloud_sync": cloudSync,
+  "015_venue_settings_feedback": venueSettingsAndFeedback,
+  "016_housekeeping_and_tips": housekeepingAndTips,
 };
 
 export const migrationProvider: MigrationProvider = {

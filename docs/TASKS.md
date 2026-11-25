@@ -28,7 +28,8 @@ and a staff member can log in.
       (ADR-019); cloud admin email/OTP still planned.
 - [x] Tenant-scoping middleware + isolation tests on SQLite (`apps/edge`).
 - [ ] Run the same isolation suite on Postgres **and** MySQL in the CI matrix.
-- [ ] PIN login hardening: rate limiting, CSRF review, security review.
+- [x] PIN login rate limiting (5 failures / 60s per staff, HTTP 429).
+- [ ] CSRF review and full authentication security review.
 - [ ] Docker Compose for edge; Dockerfile for cloud; GitHub Actions CI.
 - [ ] CI matrix: migrations + isolation/sync tests on Postgres **and** MySQL/MariaDB;
       edge tests on SQLite.
@@ -47,18 +48,19 @@ bundle from Releases starts with one command and serves the PWA on the LAN; an
 installed app detects a new version and prompts safely; splash shows on cold
 start; Settings → Danger Zone can restart/shut down the edge.
 
-- [ ] Configurable Vite `base` for GitHub Pages subpaths; router basename +
-      `import.meta.env.BASE_URL`; correct service-worker scope.
+- [x] Configurable Vite `base` for GitHub Pages subpaths;
+      `import.meta.env.BASE_URL` used for icons; relative manifest start/scope.
+- [ ] Router basename and correct service-worker scope once a router/SW lands.
 - [ ] Mode detection (`VITE_APP_MODE` + `/api/health` probe) and feature flags;
       hide edge-only UI (printers, KDS, lifecycle) in hosted mode.
 - [ ] Data-layer repository interface with IndexedDB adapter (hosted) and edge
       API adapter (edge).
-- [ ] Inject `__APP_VERSION__` (semver + git SHA + build time); serve
+- [x] Inject `__APP_VERSION__` (semver + git SHA + build time); serve
       `/version.json` and `/api/version` (`{ app, edge, schema, build }`).
-- [ ] Manifest + icons (192/512/maskable) + `theme_color`/`background_color`;
-      iOS `apple-touch-startup-image` pipeline.
-- [ ] In-app splash: logo, version, status ("Starting…"/"Offline"/"Connecting"),
-      min ~600 ms, precached, fades to app; offline retry state.
+- [x] Manifest + icons (192/512/maskable) + `theme_color`/`background_color`.
+- [ ] iOS `apple-touch-startup-image` pipeline.
+- [x] In-app splash: logo, version, status ("Starting…"/"Offline"/"Connecting"),
+      min ~600 ms; offline retry state.
 - [ ] SW update flow (`registerType: 'prompt'`): poll on interval + focus,
       non-blocking "Update available" banner with changelog, defer reload while
       a bill is open, "Check for updates" in Settings.
@@ -98,6 +100,9 @@ data survives an edge-node restart.
 - [x] Courses: menu item course and per-course firing.
 - [x] Open tabs: reopen, append rounds and send new items.
 - [x] Move/merge tables with table-status updates and audit events.
+- [x] Settings-based floor management: add areas/tables, rename/reseat, delete
+      only when no open order, duplicate-name guard.
+- [x] Settings-based menu management: add categories, edit price/availability.
 - [x] Local persistence on edge (SQLite) + restart survival.
 - [x] Optimistic UI in PWA with queued-write indicator.
 - [x] Idempotency keys on order creation and safe transition retries.
@@ -115,7 +120,7 @@ all with the internet unplugged.
       exhaustive unit tests.
 - [x] Bill view: subtotal, tax, discount, tip, total.
 - [x] Split by amount with deterministic remainder handling.
-- [ ] Split by item / by seat.
+- [ ] Split by item / by seat (split-by-amount and multi-payment capture ship).
 - [x] Void/comp with reason + role check + audit entry.
 - [x] Receipt model + 80mm ESC/POS layout (header, items, tax, totals, footer).
 - [x] Edge device bridge: network printer, print queue with retry.
@@ -141,6 +146,8 @@ payment; all reconcile in reports; all idempotent.
       last4; reconcile against the terminal/bank settlement.
 - [x] Payment audit trail + provider refs.
 - [x] Reconciliation report: expected vs captured vs pending.
+- [x] Split a bill across multiple payment attempts; reject overpayment; show a
+      per-bill payment mix and hide venue-wide mix from waiters.
 
 ---
 
@@ -162,10 +169,24 @@ payment; all reconcile in reports; all idempotent.
 Z-report that balances.
 
 - [x] RBAC enforcement on sensitive actions (voids, discounts, refunds, close).
+- [x] Role-aware navigation; waiters see only Tables/Orders/Menu/Bill/Shifts.
 - [x] Clock-in/out; active shift per staff per venue.
 - [x] Per-staff sales attribution on orders and payments.
 - [x] Shift close: cash counted vs expected, payment breakdown, Z-report.
 - [x] Shift history + CSV export.
+- [x] Staff CRUD with owner-only deletion and privileged-role grants; only
+      active users appear at login.
+- [x] Housekeeping role; waiter/housekeeping shifts record time and notes only,
+      cash roles record float/count.
+- [x] Waiters see and mutate only their own orders; owner login cards are
+      separated from other staff.
+- [x] Owner-configurable waiter tips (`enabled`, threshold, percent) computed
+      from net sales and shown in the shift report.
+- [x] Kitchen role gets KDS + Shifts; housekeeping is limited to Shifts.
+- [x] Dedicated Staff page for adding, editing, role changes and on-duty status;
+      managers have no Settings navigation.
+- [x] Owner shift view is history/Z-report only; shift history and reports show
+      clock-in and clock-out notes.
 
 ---
 
@@ -180,6 +201,10 @@ count adjusts levels with an audit trail.
 - [x] Low-stock alerts.
 - [x] Stock count / variance workflow.
 - [x] Basic supplier records (P2 depth).
+- [x] Per-venue stock opt-out; when disabled, sales do not deplete stock and
+      Stock navigation is hidden.
+- [x] Stock navigation is shown to owner and manager while enabled and hidden
+      for everyone when the owner disables it; managers can manage stock.
 
 ---
 
@@ -227,6 +252,8 @@ orders or double charges.
 - [ ] Manual chaos: edge power loss mid-order; verify no corruption.
 - [x] Load test script for 10 concurrent orders (`pnpm load:test`).
 - [x] Security review: automated tenant isolation and Daraja callback checks.
+- [x] Owner/manager feedback inbox (bugs, improvements, questions) with role
+      isolation and tenant scoping.
 - [x] Backup/restore drill script (`pnpm backup:drill`).
 - [x] Device provisioning guide (edge box, printers, drawer, scanner).
 - [ ] Remote-support path + update/rollback drill.

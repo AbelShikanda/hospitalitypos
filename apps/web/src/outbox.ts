@@ -7,9 +7,19 @@ export interface OutboxItem {
   createdAt: string;
 }
 
+export interface OutboxFailure {
+  id: string;
+  url: string;
+  status: number;
+  error: string;
+  at: string;
+}
+
 const STORAGE_KEY = "hpos.outbox.v1";
 const listeners = new Set<(count: number) => void>();
-let flushing = false;
+const failureListeners = new Set<(failure: OutboxFailure | null) => void>();
+let flushing: Promise<void> | null = null;
+let lastFailure: OutboxFailure | null = null;
 
 function read(): OutboxItem[] {
   try {
@@ -31,8 +41,21 @@ function write(items: OutboxItem[]) {
   notify(items.length);
 }
 
+function setFailure(failure: OutboxFailure | null) {
+  lastFailure = failure;
+  for (const listener of failureListeners) listener(failure);
+}
+
 export function getOutboxCount(): number {
   return read().length;
+}
+
+export function getOutboxFailure(): OutboxFailure | null {
+  return lastFailure;
+}
+
+export function dismissOutboxFailure(): void {
+  setFailure(null);
 }
 
 export function subscribeOutbox(listener: (count: number) => void) {
@@ -40,6 +63,16 @@ export function subscribeOutbox(listener: (count: number) => void) {
   listener(read().length);
   return () => {
     listeners.delete(listener);
+  };
+}
+
+export function subscribeOutboxFailures(
+  listener: (failure: OutboxFailure | null) => void,
+) {
+  failureListeners.add(listener);
+  listener(lastFailure);
+  return () => {
+    failureListeners.delete(listener);
   };
 }
 
@@ -57,35 +90,71 @@ export function enqueueOutbox(input: { url: string; body: unknown }): string {
   return item.id;
 }
 
-export async function flushOutbox(): Promise<void> {
-  if (flushing) return;
-  flushing = true;
-
-  try {
-    const queue = read();
-    for (const item of queue) {
-      try {
-        const response = await fetch(item.url, {
-          method: item.method,
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(item.body),
-        });
-        if (!response.ok) throw new Error(`outbox request failed: ${response.status}`);
-        write(read().filter((entry) => entry.id !== item.id));
-      } catch {
-        const current = read();
-        const updated = current.map((entry) =>
-          entry.id === item.id
-            ? { ...entry, attempts: entry.attempts + 1 }
-            : entry,
-        );
-        write(updated);
-        break;
-      }
-    }
-  } finally {
-    flushing = false;
+export function flushOutbox(): Promise<void> {
+  if (flushing) return flushing;
+  flushing = runFlush().finally(() => {
+    flushing = null;
     notify(read().length);
+  });
+  return flushing;
+}
+
+async function runFlush(): Promise<void> {
+  for (;;) {
+    const item = read()[0];
+    if (!item) break;
+
+    let response: Response;
+    try {
+      response = await fetch(item.url, {
+        method: item.method,
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(item.body),
+      });
+    } catch {
+      bumpAttempt(item.id);
+      break;
+    }
+
+    if (response.ok) {
+      write(read().filter((entry) => entry.id !== item.id));
+      continue;
+    }
+
+    let code = `request_failed_${response.status}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) code = body.error;
+    } catch {
+      code = `request_failed_${response.status}`;
+    }
+
+    if (
+      response.status >= 400 &&
+      response.status < 500 &&
+      response.status !== 408 &&
+      response.status !== 429
+    ) {
+      write(read().filter((entry) => entry.id !== item.id));
+      setFailure({
+        id: item.id,
+        url: item.url,
+        status: response.status,
+        error: code.replaceAll("_", " "),
+        at: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    bumpAttempt(item.id);
+    break;
   }
+}
+
+function bumpAttempt(id: string): void {
+  const updated = read().map((entry) =>
+    entry.id === id ? { ...entry, attempts: entry.attempts + 1 } : entry,
+  );
+  write(updated);
 }

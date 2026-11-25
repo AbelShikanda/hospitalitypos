@@ -10,6 +10,8 @@ const DEMO_STAFF = [
   { name: "Demo Manager", role: "manager" },
   { name: "Demo Cashier", role: "cashier" },
   { name: "Demo Waiter", role: "waiter" },
+  { name: "Demo Kitchen", role: "kitchen" },
+  { name: "Demo Housekeeping", role: "housekeeping" },
 ] as const;
 
 const DEMO_CATEGORIES = [
@@ -397,6 +399,7 @@ export async function seed(db: Kysely<Database>): Promise<void> {
         tenant_id: tenantId,
         name: member.name,
         pin_hash: hashPin(DEMO_PIN),
+        is_active: 1,
         created_at: now,
       })
       .execute();

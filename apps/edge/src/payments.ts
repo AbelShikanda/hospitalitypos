@@ -196,7 +196,11 @@ export async function processStkTimeouts(db: Db): Promise<void> {
 }
 
 export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
-  app.post("/api/payments", requireAuth(db), async (context) => {
+  app.post(
+    "/api/payments",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier"),
+    async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = createPaymentSchema.safeParse(body);
     if (!parsed.success) {
@@ -222,7 +226,7 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
 
     const existingPayments = await db
       .selectFrom("payments")
-      .select(["amount_minor", "status"])
+      .select(["amount_minor", "status", "tip_minor"])
       .where("tenant_id", "=", auth.tenantId)
       .where("order_id", "=", order.id)
       .execute();
@@ -238,6 +242,9 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const status = initialStatus(input);
+    const tipMinor = existingPayments.some((payment) => payment.tip_minor > 0)
+      ? 0
+      : input.tip_minor;
     const now = new Date().toISOString();
     const paymentId = newId();
     const details = JSON.stringify({
@@ -256,7 +263,7 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
           method: input.method,
           status,
           amount_minor: input.amount_minor,
-          tip_minor: input.tip_minor,
+          tip_minor: tipMinor,
           currency: input.currency,
           idempotency_key: input.idempotency_key,
           provider_ref: paymentRef(input),
@@ -395,10 +402,14 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
     const venueId = context.req.query("venue_id");
     let query = db
       .selectFrom("payments")
-      .selectAll()
-      .where("tenant_id", "=", auth.tenantId);
-    if (orderId) query = query.where("order_id", "=", orderId);
-    if (venueId) query = query.where("venue_id", "=", venueId);
+      .innerJoin("orders", "orders.id", "payments.order_id")
+      .selectAll("payments")
+      .where("payments.tenant_id", "=", auth.tenantId);
+    if (orderId) query = query.where("payments.order_id", "=", orderId);
+    if (venueId) query = query.where("payments.venue_id", "=", venueId);
+    if (auth.role === "waiter") {
+      query = query.where("orders.opened_by", "=", auth.userId);
+    }
     const payments = await query.orderBy("created_at", "desc").execute();
     return context.json(payments.map(toPayment));
   });
@@ -461,7 +472,11 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
-  app.post("/api/payments/:id/cancel", requireAuth(db), async (context) => {
+  app.post(
+    "/api/payments/:id/cancel",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier"),
+    async (context) => {
     const auth = context.get("auth");
     const payment = await db
       .selectFrom("payments")
@@ -626,7 +641,11 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
-  app.get("/api/payments/credentials", requireAuth(db), async (context) => {
+  app.get(
+    "/api/payments/credentials",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const rows = await db
       .selectFrom("payment_credentials")
@@ -719,7 +738,11 @@ export function registerPaymentRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json({ received: true });
   });
 
-  app.get("/api/payments/reconciliation", requireAuth(db), async (context) => {
+  app.get(
+    "/api/payments/reconciliation",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier"),
+    async (context) => {
     const auth = context.get("auth");
     const venueId = context.req.query("venue_id");
     let query = db

@@ -922,6 +922,77 @@ manual items are explicit rather than implied.
 
 ---
 
+## ADR-035 — Venue settings, feedback and role-aware navigation
+
+**Status:** Accepted
+
+**Context:** Venues differ in operating model: some track inventory, some do not;
+owners and managers need an in-app channel for bugs and improvements; staff must
+not see controls they cannot use.
+
+**Decision:**
+
+- A per-venue `venue_settings` row stores `stock_enabled` (default `true`).
+  When disabled, sales skip stock depletion and the Stock navigation item is
+  hidden, while historical stock data remains intact.
+- Settings endpoints are readable by any signed-in staff member and writable by
+  the owner only. Writes are upserts keyed by tenant + venue.
+- Floor, menu and stock management are owner-only. Table names are unique per
+  venue; deletion is refused while an order is open.
+- Feedback is tenant-scoped, visible to owner/manager only, and records category,
+  subject, message, author and status.
+- The web shell derives visible navigation from role and venue settings; direct
+  API access is still role-checked server-side.
+- PIN login failures are rate limited in memory per tenant + staff (5 failures
+  per 60 seconds) and return `429 too_many_attempts`.
+
+**Consequences:** Owners control configuration while managers keep day-to-day
+staff and shift work. A venue can run without inventory discipline. In-memory
+rate limiting is per edge process; a multi-process deployment would need shared
+storage.
+
+## ADR-036 — Operational roles, owner controls and waiter tips
+
+**Status:** Accepted
+
+**Context:** Venues need department-specific access (housekeeping never handles
+cash), waiters must not see each other's tabs, and staff administration must not
+grant configuration powers to managers. Owners also want a simple per-waiter
+incentive tied to sales.
+
+**Decision:**
+
+- Roles are `owner`, `manager`, `cashier`, `waiter`, `kitchen`, `housekeeping`.
+  Only active users are returned by bootstrap and can hold a PIN session.
+  Kitchen staff get KDS and Shifts; housekeeping gets Shifts only.
+- A dedicated Staff page lets owner and manager list/create/update staff and
+  change roles. Only the owner may delete users or grant owner/manager roles.
+  Self and last-owner deletion are refused. Manager navigation contains Staff
+  but no Settings page.
+- Owners alone may change venue settings (including tips), stock, menu, floor
+  plan and tables. Managers keep reports, staff, feedback and shift operations.
+- Waiters may only list/open their own orders and mutate their own open tabs;
+  payment and report endpoints are similarly scoped. The owner login screen
+  separates owner cards from other staff.
+- Shifts record optional clock-in/out notes and automatic timestamps. Cash float
+  and counted cash apply only to owner/manager/cashier; waiter, kitchen and
+  housekeeping values are forced to zero. Owners review history and Z-reports
+  only; they do not clock in or out.
+- Waiter tips are owner-configured (`tip_enabled`, `tip_threshold_minor`,
+  `tip_percent`) and computed on each waiter's net sales above the threshold
+  within a shift; the result appears in the shift report. Tips are not taxed as
+  sales and are applied once per bill even when the bill is split across
+  payments.
+
+- Stock navigation is visible to owner and manager only while the owner has
+  stock management enabled; turning it off hides it for everyone, including the
+  owner, while history remains intact.
+
+**Consequences:** Configuration stays with the owner, department roles have
+least-privilege access, and tips are explainable from shift sales. Per-bill
+payment splits are visible individually while venue-wide payment mix is hidden
+from waiters.
+
 ## Open decisions (not yet resolved)
 
 - PDQ vendor/bank (e.g. local acquirer, Pesapal, DPO) and protocol (LAN/SDK/
@@ -930,7 +1001,6 @@ manual items are explicit rather than implied.
 - VPS provider + DB engine (Postgres vs MySQL); confirm MySQL 8+/MariaDB 10.6+.
 - Whether KDS is in the first sellable release or phase 2 (hardware was selected,
   module routing is adjacent to ordering).
-- Tip handling: pre-tax vs post-tax, and service-charge rules.
 - Multi-currency and multi-language timing.
 - Sync engine: custom outbox vs a self-hostable OSS engine once volume is known
   (no paid sync).

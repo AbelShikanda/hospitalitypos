@@ -23,12 +23,15 @@ import {
   type AppEnv,
 } from "./auth.js";
 import { registerFloorRoutes } from "./floor.js";
+import { registerFeedbackRoutes } from "./feedback.js";
 import { registerKdsRoutes } from "./kds.js";
 import { registerMenuRoutes } from "./menu.js";
 import { registerOrderRoutes } from "./orders.js";
 import { registerPaymentRoutes } from "./payments.js";
 import { registerPrintRoutes } from "./print.js";
 import { registerReportRoutes } from "./reports.js";
+import { registerSettingsRoutes } from "./settings.js";
+import { registerStaffRoutes } from "./staff.js";
 import { registerShiftRoutes } from "./shifts.js";
 import { registerStockRoutes } from "./stock.js";
 import { registerEdgeSyncRoutes } from "./sync.js";
@@ -37,6 +40,33 @@ export interface EdgeAppOptions {
   db: Db;
   version?: string;
   webDist?: string | null;
+}
+
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_FAILURES = 5;
+const loginFailures = new Map<string, { count: number; firstAt: number }>();
+
+function loginKey(tenantId: string, userId: string): string {
+  return `${tenantId}:${userId}`;
+}
+
+function isLoginBlocked(key: string, now: number): boolean {
+  const entry = loginFailures.get(key);
+  if (!entry) return false;
+  if (now - entry.firstAt > LOGIN_WINDOW_MS) {
+    loginFailures.delete(key);
+    return false;
+  }
+  return entry.count >= LOGIN_MAX_FAILURES;
+}
+
+function recordLoginFailure(key: string, now: number): void {
+  const entry = loginFailures.get(key);
+  if (!entry || now - entry.firstAt > LOGIN_WINDOW_MS) {
+    loginFailures.set(key, { count: 1, firstAt: now });
+    return;
+  }
+  entry.count += 1;
 }
 
 async function resolveTenant(db: Db) {
@@ -70,7 +100,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 14, build }),
+    context.json({ app: version, edge: version, schema: 16, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -93,6 +123,7 @@ export function createEdgeApp({
       )
       .select(["users.id", "users.name", "memberships.role"])
       .where("users.tenant_id", "=", tenant.id)
+      .where("users.is_active", "=", 1)
       .orderBy("users.name")
       .execute();
 
@@ -112,17 +143,26 @@ export function createEdgeApp({
     }
 
     const { tenant_id, user_id, pin, device_id } = parsed.data;
+    const key = loginKey(tenant_id, user_id);
+    const nowMs = Date.now();
+    if (isLoginBlocked(key, nowMs)) {
+      return context.json({ error: "too_many_attempts" }, 429);
+    }
 
     const user = await db
       .selectFrom("users")
       .selectAll()
       .where("id", "=", user_id)
       .where("tenant_id", "=", tenant_id)
+      .where("is_active", "=", 1)
       .executeTakeFirst();
 
     if (!user || !verifyPin(pin, user.pin_hash)) {
+      recordLoginFailure(key, nowMs);
       return context.json({ error: "invalid_credentials" }, 401);
     }
+
+    loginFailures.delete(key);
 
     const membership = await db
       .selectFrom("memberships")
@@ -237,6 +277,9 @@ export function createEdgeApp({
 
   registerMenuRoutes(app, db);
   registerFloorRoutes(app, db);
+  registerSettingsRoutes(app, db);
+  registerStaffRoutes(app, db);
+  registerFeedbackRoutes(app, db);
   registerOrderRoutes(app, db);
   registerPrintRoutes(app, db);
   registerPaymentRoutes(app, db);

@@ -47,6 +47,7 @@ async function addTenant(
       tenant_id: tenantId,
       name: `${name} User`,
       pin_hash: hashPin(pin),
+      is_active: 1,
       created_at: now,
     })
     .execute();
@@ -1134,6 +1135,29 @@ describe("menu, floor and orders", () => {
     const manualPayment = (await manual.json()) as { id: string; status: string };
     expect(manualPayment.status).toBe("pending");
 
+    const pending = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "mpesa_manual",
+        amount_minor: 10000,
+        idempotency_key: "mpesa-payment-cancel",
+        mpesa: { reference: "CANCEL123" },
+      }),
+    });
+    expect(pending.status).toBe(201);
+    const pendingPayment = (await pending.json()) as { id: string };
+
+    const cancelled = await app.request(
+      `/api/payments/${pendingPayment.id}/cancel`,
+      { method: "POST", headers: { cookie } },
+    );
+    expect(cancelled.status).toBe(200);
+    await expect(cancelled.json()).resolves.toMatchObject({
+      status: "cancelled",
+    });
+
     const confirmed = await app.request(
       `/api/payments/${manualPayment.id}/confirm`,
       { method: "POST", headers: { cookie } },
@@ -1700,5 +1724,727 @@ describe("menu, floor and orders", () => {
       }),
     });
     expect(crossCreate.status).toBe(404);
+  });
+
+  it("stores venue settings and skips stock depletion when disabled", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const disabled = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ venue_id: fixture.venueId, stock_enabled: false }),
+    });
+    expect(disabled.status).toBe(200);
+    await expect(disabled.json()).resolves.toMatchObject({
+      stock_enabled: false,
+    });
+
+    const settings = await app.request(
+      `/api/settings?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    await expect(settings.json()).resolves.toMatchObject({
+      stock_enabled: false,
+    });
+
+    const stockResponse = await app.request("/api/stock", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "Beef",
+        unit: "g",
+        quantity: 10,
+        par_level: 5,
+      }),
+    });
+    const stock = (await stockResponse.json()) as { id: string };
+    await app.request("/api/recipes", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        menu_item_id: menu.itemId,
+        stock_item_id: stock.id,
+        quantity: 2,
+      }),
+    });
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 2,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const afterSale = await app.request(
+      `/api/stock?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const items = (await afterSale.json()) as Array<{
+      id: string;
+      quantity: number;
+    }>;
+    expect(items.find((item) => item.id === stock.id)?.quantity).toBe(10);
+
+    const waiter = await addTenant(db, "Beta", "waiter");
+    const waiterLogin = await login(app, waiter);
+    const forbidden = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: {
+        cookie: waiterLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ venue_id: waiter.venueId, stock_enabled: false }),
+    });
+    expect(forbidden.status).toBe(403);
+  });
+
+  it("adds, updates and deletes tables, blocking open orders", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const areaResponse = await app.request("/api/floor/areas", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "Terrace",
+        sort_order: 2,
+      }),
+    });
+    expect(areaResponse.status).toBe(201);
+    const area = (await areaResponse.json()) as { id: string };
+
+    const duplicate = await app.request("/api/floor/tables", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ area_id: area.id, name: "T1", seats: 4 }),
+    });
+    expect(duplicate.status).toBe(409);
+
+    const tableResponse = await app.request("/api/floor/tables", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ area_id: area.id, name: "Patio 1", seats: 4 }),
+    });
+    expect(tableResponse.status).toBe(201);
+    const table = (await tableResponse.json()) as { id: string };
+
+    const updated = await app.request(`/api/floor/tables/${table.id}`, {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Patio 1A", seats: 6 }),
+    });
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toMatchObject({
+      name: "Patio 1A",
+      seats: 6,
+    });
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const blocked = await app.request(`/api/floor/tables/${menu.tableId}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(blocked.status).toBe(409);
+
+    const removed = await app.request(`/api/floor/tables/${table.id}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(removed.status).toBe(204);
+  });
+
+  it("manages menu categories and item availability", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const categoryResponse = await app.request("/api/menu/categories", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Drinks", sort_order: 1 }),
+    });
+    expect(categoryResponse.status).toBe(201);
+
+    const updated = await app.request(`/api/menu/items/${menu.itemId}`, {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ price_minor: 99000, is_available: false }),
+    });
+    expect(updated.status).toBe(200);
+    await expect(updated.json()).resolves.toMatchObject({
+      price_minor: 99000,
+      is_available: 0,
+    });
+  });
+
+  it("captures feedback and order notes", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const feedback = await app.request("/api/feedback", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        category: "bug",
+        subject: "KDS not loading",
+        message: "Tickets were empty until we chose all stations.",
+      }),
+    });
+    expect(feedback.status).toBe(201);
+
+    const list = await app.request("/api/feedback", { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const rows = (await list.json()) as Array<{ subject: string }>;
+    expect(rows[0]?.subject).toBe("KDS not loading");
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    const order = (await created.json()) as { id: string };
+    const noted = await app.request(`/api/orders/${order.id}/notes`, {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ notes: "No onions, birthday dessert" }),
+    });
+    expect(noted.status).toBe(200);
+    await expect(noted.json()).resolves.toMatchObject({
+      notes: "No onions, birthday dessert",
+    });
+
+    const waiter = await addTenant(db, "Beta", "waiter");
+    const waiterLogin = await login(app, waiter);
+    const forbidden = await app.request("/api/feedback", {
+      method: "POST",
+      headers: {
+        cookie: waiterLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        category: "bug",
+        subject: "Should fail",
+        message: "Waiters cannot file feedback in this app.",
+      }),
+    });
+    expect(forbidden.status).toBe(403);
+  });
+
+  it("creates staff with role rules and hides removed users from login", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const managerResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Mia Manager", pin: "2222", role: "manager" }),
+    });
+    expect(managerResponse.status).toBe(201);
+    const manager = (await managerResponse.json()) as { id: string };
+
+    const waiterResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Wes Waiter", pin: "3333", role: "waiter" }),
+    });
+    expect(waiterResponse.status).toBe(201);
+    const waiter = (await waiterResponse.json()) as { id: string };
+
+    const managerLogin = await login(app, {
+      ...fixture,
+      userId: manager.id,
+    }, "2222");
+    expect(managerLogin.response.status).toBe(200);
+
+    const managerCannotCreateOwner = await app.request("/api/staff", {
+      method: "POST",
+      headers: {
+        cookie: managerLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ name: "Ola Owner", pin: "4444", role: "owner" }),
+    });
+    expect(managerCannotCreateOwner.status).toBe(403);
+
+    const managerCannotRemove = await app.request(`/api/staff/${waiter.id}`, {
+      method: "DELETE",
+      headers: { cookie: managerLogin.cookie },
+    });
+    expect(managerCannotRemove.status).toBe(403);
+
+    const managerCanCreateWaiter = await app.request("/api/staff", {
+      method: "POST",
+      headers: {
+        cookie: managerLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "Nia Waiter",
+        pin: "5555",
+        role: "waiter",
+      }),
+    });
+    expect(managerCanCreateWaiter.status).toBe(201);
+
+    const removed = await app.request(`/api/staff/${waiter.id}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(removed.status).toBe(204);
+
+    const bootstrap = await app.request("/api/bootstrap");
+    const body = (await bootstrap.json()) as {
+      staff: Array<{ id: string }>;
+    };
+    expect(body.staff.some((member) => member.id === waiter.id)).toBe(false);
+
+    const waiterLogin = await login(app, { ...fixture, userId: waiter.id }, "3333");
+    expect(waiterLogin.response.status).toBe(401);
+  });
+
+  it("tracks housekeeping time without cash fields", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha", "housekeeping");
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const clockIn = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        starting_cash_minor: 99900,
+        notes: "Opening rooms",
+      }),
+    });
+    expect(clockIn.status).toBe(201);
+    const shift = (await clockIn.json()) as {
+      id: string;
+      starting_cash_minor: number;
+      clock_in_notes: string;
+    };
+    expect(shift.starting_cash_minor).toBe(0);
+    expect(shift.clock_in_notes).toBe("Opening rooms");
+
+    const clockOut = await app.request(`/api/shifts/${shift.id}/clock-out`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ counted_cash_minor: 50000, notes: "Rooms done" }),
+    });
+    expect(clockOut.status).toBe(200);
+    await expect(clockOut.json()).resolves.toMatchObject({
+      counted_cash_minor: 0,
+      notes: "Rooms done",
+    });
+
+    const history = await app.request(
+      `/api/shifts?venue_id=${fixture.venueId}`,
+      { headers: { cookie } },
+    );
+    const rows = (await history.json()) as Array<{
+      id: string;
+      clock_in_notes: string | null;
+      notes: string | null;
+    }>;
+    expect(rows.map((row) => row.id)).toEqual([shift.id]);
+    expect(rows[0]).toMatchObject({
+      clock_in_notes: "Opening rooms",
+      notes: "Rooms done",
+    });
+  });
+
+  it("limits waiters to their own orders", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const firstResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Wes One", pin: "3333", role: "waiter" }),
+    });
+    const first = (await firstResponse.json()) as { id: string };
+    const secondResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Wes Two", pin: "4444", role: "waiter" }),
+    });
+    const second = (await secondResponse.json()) as { id: string };
+
+    const firstLogin = await login(app, { ...fixture, userId: first.id }, "3333");
+    const secondLogin = await login(app, { ...fixture, userId: second.id }, "4444");
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: {
+        cookie: firstLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const order = (await created.json()) as { id: string };
+
+    const ownList = await app.request(
+      `/api/orders?venue_id=${fixture.venueId}`,
+      { headers: { cookie: firstLogin.cookie } },
+    );
+    await expect(ownList.json()).resolves.toHaveLength(1);
+
+    const hiddenList = await app.request(
+      `/api/orders?venue_id=${fixture.venueId}`,
+      { headers: { cookie: secondLogin.cookie } },
+    );
+    await expect(hiddenList.json()).resolves.toHaveLength(0);
+
+    const hiddenOrder = await app.request(`/api/orders/${order.id}`, {
+      headers: { cookie: secondLogin.cookie },
+    });
+    expect(hiddenOrder.status).toBe(404);
+
+    const hiddenNote = await app.request(`/api/orders/${order.id}/notes`, {
+      method: "PATCH",
+      headers: {
+        cookie: secondLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ notes: "Not mine" }),
+    });
+    expect(hiddenNote.status).toBe(404);
+
+    const payment = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 115000,
+        idempotency_key: "waiter-scope-payment",
+      }),
+    });
+    expect(payment.status).toBe(201);
+
+    const ownPayments = await app.request(
+      `/api/payments?order_id=${order.id}`,
+      { headers: { cookie: firstLogin.cookie } },
+    );
+    await expect(ownPayments.json()).resolves.toHaveLength(1);
+
+    const hiddenPayments = await app.request(
+      `/api/payments?order_id=${order.id}`,
+      { headers: { cookie: secondLogin.cookie } },
+    );
+    await expect(hiddenPayments.json()).resolves.toHaveLength(0);
+  });
+
+  it("keeps owner settings away but lets managers manage stock", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const managerResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Mia Manager", pin: "2222", role: "manager" }),
+    });
+    const manager = (await managerResponse.json()) as { id: string };
+    const managerLogin = await login(
+      app,
+      { ...fixture, userId: manager.id },
+      "2222",
+    );
+
+    const settings = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: {
+        cookie: managerLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        tip_enabled: true,
+        tip_threshold_minor: 100000,
+        tip_percent: 10,
+      }),
+    });
+    expect(settings.status).toBe(403);
+
+    const stock = await app.request("/api/stock", {
+      method: "POST",
+      headers: {
+        cookie: managerLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        name: "House Beans",
+        unit: "kg",
+        quantity: 10,
+        par_level: 3,
+      }),
+    });
+    expect(stock.status).toBe(201);
+    await expect(stock.json()).resolves.toMatchObject({
+      name: "House Beans",
+      quantity: 10,
+    });
+  });
+
+  it("accepts split payments and rejects overpayment", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    const order = (await created.json()) as { id: string };
+
+    const first = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 50000,
+        tip_minor: 1000,
+        idempotency_key: "split-payment-001",
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 65000,
+        tip_minor: 3000,
+        idempotency_key: "split-payment-002",
+      }),
+    });
+    expect(second.status).toBe(201);
+
+    const over = await app.request("/api/payments", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        order_id: order.id,
+        method: "cash",
+        amount_minor: 1000,
+        idempotency_key: "split-payment-003",
+      }),
+    });
+    expect(over.status).toBe(409);
+
+    const list = await app.request(
+      `/api/payments?order_id=${order.id}`,
+      { headers: { cookie } },
+    );
+    const rows = (await list.json()) as Array<{ tip_minor: number }>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.tip_minor).sort((a, b) => a - b)).toEqual([
+      0, 1000,
+    ]);
+  });
+
+  it("computes waiter tips from sales above the owner threshold", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const menu = await addMenu(db, fixture);
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const waiterResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Tip Waiter", pin: "7777", role: "waiter" }),
+    });
+    const waiter = (await waiterResponse.json()) as { id: string };
+
+    const settings = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        tip_enabled: true,
+        tip_threshold_minor: 100000,
+        tip_percent: 10,
+      }),
+    });
+    expect(settings.status).toBe(200);
+
+    const decimal = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        tip_percent: 10.5,
+      }),
+    });
+    expect(decimal.status).toBe(200);
+    await expect(decimal.json()).resolves.toMatchObject({ tip_percent: 11 });
+
+    const reset = await app.request("/api/settings", {
+      method: "PATCH",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        tip_percent: 10,
+      }),
+    });
+    expect(reset.status).toBe(200);
+
+    const waiterLogin = await login(app, { ...fixture, userId: waiter.id }, "7777");
+    const clockIn = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: {
+        cookie: waiterLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ venue_id: fixture.venueId }),
+    });
+    const shift = (await clockIn.json()) as { id: string };
+
+    const created = await app.request("/api/orders", {
+      method: "POST",
+      headers: {
+        cookie: waiterLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        table_id: menu.tableId,
+        items: [
+          {
+            item_id: menu.itemId,
+            quantity: 1,
+            modifier_ids: [menu.modifierId],
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const clockOut = await app.request(`/api/shifts/${shift.id}/clock-out`, {
+      method: "POST",
+      headers: {
+        cookie: waiterLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ notes: "Service done" }),
+    });
+    expect(clockOut.status).toBe(200);
+
+    const report = await app.request(`/api/shifts/${shift.id}/report`, {
+      headers: { cookie: waiterLogin.cookie },
+    });
+    expect(report.status).toBe(200);
+    await expect(report.json()).resolves.toMatchObject({
+      sales: { net_minor: 115000 },
+      tips: { eligible: true, staff_tip_minor: 1500 },
+    });
+  });
+
+  it("rate limits repeated PIN failures", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const app = appFor(db);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await app.request("/api/auth/pin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tenant_id: fixture.tenantId,
+          user_id: fixture.userId,
+          pin: "0000",
+        }),
+      });
+      expect(response.status).toBe(401);
+    }
+
+    const blocked = await login(app, fixture);
+    expect(blocked.response.status).toBe(429);
   });
 });

@@ -90,7 +90,11 @@ export function registerKdsRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
-  app.get("/api/kds/tickets", requireAuth(db), async (context) => {
+  app.get(
+    "/api/kds/tickets",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "kitchen"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,

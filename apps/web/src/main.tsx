@@ -11,13 +11,22 @@ import {
 import "@hpos/ui/styles/tokens.css";
 import "./styles.css";
 import {
+  dismissOutboxFailure,
   enqueueOutbox,
   flushOutbox,
   getOutboxCount,
   subscribeOutbox,
+  subscribeOutboxFailures,
+  type OutboxFailure,
 } from "./outbox.js";
 
-type Role = "owner" | "manager" | "cashier" | "waiter" | "kitchen";
+type Role =
+  | "owner"
+  | "manager"
+  | "cashier"
+  | "waiter"
+  | "kitchen"
+  | "housekeeping";
 
 type Course = "starter" | "main" | "dessert" | "drink" | "other";
 
@@ -234,6 +243,7 @@ type Shift = {
   starting_cash_minor: number;
   counted_cash_minor: number | null;
   notes: string | null;
+  clock_in_notes?: string | null;
   clock_in_at: string;
   clock_out_at: string | null;
 };
@@ -252,6 +262,13 @@ type ShiftReport = {
     expected_minor: number;
     counted_minor: number;
     variance_minor: number;
+  };
+  tips?: {
+    enabled: boolean;
+    eligible: boolean;
+    threshold_minor: number;
+    percent: number;
+    staff_tip_minor: number;
   };
 };
 
@@ -295,6 +312,27 @@ type CartLine = {
   item: MenuItem;
   quantity: number;
   modifiers: Modifier[];
+  note: string;
+};
+
+type VenueSettings = {
+  venue_id: string;
+  stock_enabled: boolean;
+  tip_enabled: boolean;
+  tip_threshold_minor: number;
+  tip_percent: number;
+};
+
+type Feedback = {
+  id: string;
+  venue_id: string | null;
+  user_id: string;
+  user_name: string;
+  category: "bug" | "improvement" | "question" | "other";
+  subject: string;
+  message: string;
+  status: string;
+  created_at: string;
 };
 
 type Phase = "loading" | "login" | "ready" | "offline";
@@ -308,10 +346,32 @@ const NAV_ITEMS = [
   "Stock",
   "Reports",
   "Shifts",
+  "Staff",
+  "Feedback",
   "Settings",
 ] as const;
 
 type NavItem = (typeof NAV_ITEMS)[number];
+
+const ROLE_NAV: Record<Role, NavItem[]> = {
+  owner: [...NAV_ITEMS],
+  manager: [
+    "Tables",
+    "Orders",
+    "Bill",
+    "Menu",
+    "KDS",
+    "Stock",
+    "Reports",
+    "Shifts",
+    "Staff",
+    "Feedback",
+  ],
+  cashier: ["Tables", "Orders", "Bill", "Menu", "KDS", "Shifts"],
+  waiter: ["Tables", "Orders", "Bill", "Menu", "Shifts"],
+  kitchen: ["KDS", "Shifts"],
+  housekeeping: ["Shifts"],
+};
 
 const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
@@ -319,6 +379,7 @@ const ROLE_LABELS: Record<Role, string> = {
   cashier: "Cashier",
   waiter: "Waiter",
   kitchen: "Kitchen",
+  housekeeping: "Housekeeping",
 };
 
 const PIN_KEYS = [
@@ -343,6 +404,33 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    ...init,
+    headers: {
+      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...init?.headers,
+    },
+  });
+  if (!response.ok) {
+    let code = `request_failed_${response.status}`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) code = body.error;
+    } catch {
+      code = `request_failed_${response.status}`;
+    }
+    throw new Error(code.replaceAll("_", " "));
+  }
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+function iconUrl(): string {
+  return `${import.meta.env.BASE_URL}icon.svg`;
 }
 
 function money(minor: number): string {
@@ -381,7 +469,7 @@ function cartTotals(cart: CartLine[]) {
 function Splash({ phase, version }: { phase: Phase; version?: string }) {
   return (
     <div className="splash">
-      <img className="splash-logo" src="/icon.svg" alt="Hospitality POS" />
+      <img className="splash-logo" src={iconUrl()} alt="Hospitality POS" />
       <h1>Hospitality POS</h1>
       <span className="splash-pill">
         <span
@@ -389,7 +477,7 @@ function Splash({ phase, version }: { phase: Phase; version?: string }) {
         />
         {phase === "offline" ? "Offline — retrying" : "Starting…"}
       </span>
-      <p className="splash-version">{version ?? "0.0.0-dev"}</p>
+      <p className="splash-version">{version ?? __APP_VERSION__}</p>
     </div>
   );
 }
@@ -459,11 +547,30 @@ function Login({
     }
   }
 
+  function renderStaffCard(member: Staff) {
+    return (
+      <button
+        key={member.id}
+        className="staff-card"
+        type="button"
+        onClick={() => {
+          setStaff(member);
+          setPin("");
+          setError("");
+        }}
+      >
+        <span className="avatar">{initials(member.name)}</span>
+        <span className="staff-name">{member.name}</span>
+        <span className="staff-role">{ROLE_LABELS[member.role]}</span>
+      </button>
+    );
+  }
+
   return (
     <div className="login">
       <section className="login-panel">
         <header className="login-head">
-          <img src="/icon.svg" alt="" />
+          <img src={iconUrl()} alt="" />
           <div>
             <strong>{bootstrap.tenant.name}</strong>
             <small>{venue?.name ?? "Main Venue"} · Staff sign in</small>
@@ -474,23 +581,21 @@ function Login({
           <>
             <h1>Who is on shift?</h1>
             <p className="login-hint">Select your name to enter your PIN.</p>
+            {bootstrap.staff.some((member) => member.role === "owner") ? (
+              <>
+                <span className="staff-section-label">Owner</span>
+                <div className="staff-grid staff-grid--owner">
+                  {bootstrap.staff
+                    .filter((member) => member.role === "owner")
+                    .map(renderStaffCard)}
+                </div>
+                <span className="staff-section-label">Team</span>
+              </>
+            ) : null}
             <div className="staff-grid">
-              {bootstrap.staff.map((member) => (
-                <button
-                  key={member.id}
-                  className="staff-card"
-                  type="button"
-                  onClick={() => {
-                    setStaff(member);
-                    setPin("");
-                    setError("");
-                  }}
-                >
-                  <span className="avatar">{initials(member.name)}</span>
-                  <span className="staff-name">{member.name}</span>
-                  <span className="staff-role">{ROLE_LABELS[member.role]}</span>
-                </button>
-              ))}
+              {bootstrap.staff
+                .filter((member) => member.role !== "owner")
+                .map(renderStaffCard)}
             </div>
           </>
         ) : (
@@ -557,7 +662,7 @@ function Login({
       </section>
 
       <aside className="login-aside">
-        <img src="/icon.svg" alt="" />
+        <img src={iconUrl()} alt="" />
         <h2>Ready for service</h2>
         <p>
           Sign in on this tablet. The venue server keeps working even if the
@@ -711,16 +816,16 @@ function OrderBuilder({
   const [categoryId, setCategoryId] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [notes, setNotes] = useState("");
+  const [orderNote, setOrderNote] = useState("");
   const [courseToSend, setCourseToSend] = useState<Course | "all">("all");
   const [pending, setPending] = useState<MenuItem | null>(null);
   const [existingOrder, setExistingOrder] = useState<Order | null>(null);
-  const [moveTableId, setMoveTableId] = useState("");
-  const [mergeOrderId, setMergeOrderId] = useState("");
+  const [targetKey, setTargetKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [submitting] = useState<"save" | "send" | "move" | "merge" | null>(
-    null,
-  );
+  const [submitting, setSubmitting] = useState<
+    "save" | "send" | "move" | "merge" | null
+  >(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const newOrderId = useRef(newId());
 
@@ -744,7 +849,10 @@ function OrderBuilder({
         });
         if (!response.ok) throw new Error("order failed");
         const data = (await response.json()) as Order;
-        if (!cancelled) setExistingOrder(data);
+        if (!cancelled) {
+          setExistingOrder(data);
+          setOrderNote(data.notes ?? "");
+        }
       } catch {
         if (!cancelled) setError("Could not load the open tab.");
       }
@@ -824,7 +932,7 @@ function OrderBuilder({
         tax_rate: line.item.tax_rate,
         course: line.item.course,
         line_total_minor: (line.item.price_minor + delta) * line.quantity,
-        notes: notes.trim() || null,
+        notes: line.note.trim() || null,
         status: fired ? "sent" : "pending",
         modifiers: line.modifiers.map((modifier) => ({ name: modifier.name })),
       };
@@ -842,52 +950,86 @@ function OrderBuilder({
       tax_minor: (existingOrder?.tax_minor ?? 0) + newTotals.taxMinor,
       total_minor: (existingOrder?.total_minor ?? 0) + newTotals.totalMinor,
       table_id: table.id,
-      notes: notes.trim() || existingOrder?.notes || null,
+      notes:
+        (existingOrder ? orderNote : notes).trim() ||
+        existingOrder?.notes ||
+        null,
       discount_minor: existingOrder?.discount_minor ?? 0,
       discount_reason: existingOrder?.discount_reason ?? null,
       items: [...(existingOrder?.items ?? []), ...newItems],
     };
   }
 
-  function moveTable() {
-    if (!existingOrder || !moveTableId) return;
+  async function moveOrMerge() {
+    if (!existingOrder || !targetKey) return;
+    const [kind, id] = targetKey.split(":");
+    if (!id) return;
     setError("");
+    setSubmitting(kind === "table" ? "move" : "merge");
     try {
-      enqueueOutbox({
-        url: `/api/orders/${existingOrder.id}/move`,
-        body: {
-          table_id: moveTableId,
-          idempotency_key: crypto.randomUUID(),
-        },
-      });
-      onDone({ ...existingOrder, table_id: moveTableId }, "move");
-    } catch {
-      setError("The table move could not be queued. Try again.");
+      if (kind === "table") {
+        const updated = await request<Order>(
+          `/api/orders/${existingOrder.id}/move`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              table_id: id,
+              idempotency_key: crypto.randomUUID(),
+            }),
+          },
+        );
+        onDone(updated, "move");
+      } else {
+        const updated = await request<Order>(
+          `/api/orders/${existingOrder.id}/merge`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              target_order_id: id,
+              idempotency_key: crypto.randomUUID(),
+            }),
+          },
+        );
+        onDone(updated, "merge");
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Move/merge failed: ${cause.message}`
+          : "Move/merge failed. Try again.",
+      );
+    } finally {
+      setSubmitting(null);
     }
   }
 
-  function mergeTable() {
-    if (!existingOrder || !mergeOrderId) return;
+  async function saveOrderNote() {
+    if (!existingOrder) return;
     setError("");
     try {
-      enqueueOutbox({
-        url: `/api/orders/${existingOrder.id}/merge`,
-        body: {
-          target_order_id: mergeOrderId,
-          idempotency_key: crypto.randomUUID(),
+      const updated = await request<Order>(
+        `/api/orders/${existingOrder.id}/notes`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ notes: orderNote.trim() || null }),
         },
-      });
-      onDone(existingOrder, "merge");
-    } catch {
-      setError("The table merge could not be queued. Try again.");
+      );
+      setExistingOrder(updated);
+      setOrderNote(updated.notes ?? "");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Note update failed: ${cause.message}`
+          : "Note update failed. Try again.",
+      );
     }
   }
 
-  function addLine(item: MenuItem, modifiers: Modifier[]) {
+  function addLine(item: MenuItem, modifiers: Modifier[], note = "") {
     const key = `${item.id}:${modifiers
       .map((modifier) => modifier.id)
       .sort()
-      .join(",")}`;
+      .join(",")}:${note}`;
 
     setCart((current) => {
       const existing = current.find((line) => line.key === key);
@@ -896,8 +1038,25 @@ function OrderBuilder({
           line.key === key ? { ...line, quantity: line.quantity + 1 } : line,
         );
       }
-      return [...current, { key, item, quantity: 1, modifiers }];
+      return [...current, { key, item, quantity: 1, modifiers, note }];
     });
+  }
+
+  function updateLineNote(key: string, note: string) {
+    setCart((current) =>
+      current.map((line) =>
+        line.key === key
+          ? {
+              ...line,
+              note,
+              key: `${line.item.id}:${line.modifiers
+                .map((modifier) => modifier.id)
+                .sort()
+                .join(",")}:${note}`,
+            }
+          : line,
+      ),
+    );
   }
 
   function chooseItem(item: MenuItem) {
@@ -931,6 +1090,7 @@ function OrderBuilder({
         item_id: line.item.id,
         quantity: line.quantity,
         modifier_ids: line.modifiers.map((modifier) => modifier.id),
+        ...(line.note.trim() ? { notes: line.note.trim() } : {}),
       }));
       const common = {
         idempotency_key: idempotencyKey.current,
@@ -989,54 +1149,63 @@ function OrderBuilder({
 
       {existingOrder ? (
         <section className="card tab-actions">
-          <div className="tab-action">
+          <div className="tab-action tab-action--wide">
             <label>
-              <span>Move to table</span>
+              <span>Move or merge this tab</span>
               <select
-                value={moveTableId}
-                onChange={(event) => setMoveTableId(event.target.value)}
+                value={targetKey}
+                onChange={(event) => setTargetKey(event.target.value)}
               >
-                <option value="">Choose table</option>
-                {freeTables.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.name} · {entry.seats} seats
-                  </option>
-                ))}
+                <option value="">Choose a free table or another tab</option>
+                {freeTables.length ? (
+                  <optgroup label="Free tables (move)">
+                    {freeTables.map((entry) => (
+                      <option key={entry.id} value={`table:${entry.id}`}>
+                        {entry.name} · {entry.seats} seats
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {otherOrders.length ? (
+                  <optgroup label="Open tabs (merge)">
+                    {otherOrders.map((order) => (
+                      <option key={order.id} value={`tab:${order.id}`}>
+                        {order.number} · {order.table_name ?? "Takeaway"}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </label>
             <button
               className="theme-button"
               type="button"
-              disabled={submitting !== null || !moveTableId}
-              onClick={() => void moveTable()}
+              disabled={submitting !== null || !targetKey}
+              onClick={() => void moveOrMerge()}
             >
-              {submitting === "move" ? "Moving…" : "Move"}
+              {submitting === "move"
+                ? "Moving…"
+                : submitting === "merge"
+                  ? "Merging…"
+                  : "Move / merge"}
             </button>
           </div>
-          <div className="tab-action">
-            <label>
-              <span>Merge into tab</span>
-              <select
-                value={mergeOrderId}
-                onChange={(event) => setMergeOrderId(event.target.value)}
-              >
-                <option value="">Choose tab</option>
-                {otherOrders.map((order) => (
-                  <option key={order.id} value={order.id}>
-                    {order.number} · {order.table_name ?? "Takeaway"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="theme-button"
-              type="button"
-              disabled={submitting !== null || !mergeOrderId}
-              onClick={() => void mergeTable()}
-            >
-              {submitting === "merge" ? "Merging…" : "Merge"}
-            </button>
-          </div>
+          {!freeTables.length && !otherOrders.length ? (
+            <p className="muted">
+              No free tables or other open tabs right now. Add more tables in
+              Settings, or close another tab first.
+            </p>
+          ) : !freeTables.length ? (
+            <p className="muted">
+              No free tables right now — you can still merge into another open
+              tab.
+            </p>
+          ) : !otherOrders.length ? (
+            <p className="muted">
+              No other open tabs to merge with — choose a free table to move
+              this tab.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -1113,9 +1282,25 @@ function OrderBuilder({
                 <span>Already ordered</span>
                 <strong>{existingOrder.number}</strong>
               </div>
-              {existingOrder.notes ? (
-                <p className="order-note">{existingOrder.notes}</p>
-              ) : null}
+              <label className="note-field">
+                <span>Order note</span>
+                <textarea
+                  value={orderNote}
+                  maxLength={500}
+                  rows={2}
+                  placeholder="e.g. birthday, allergies, no onions"
+                  onChange={(event) => setOrderNote(event.target.value)}
+                />
+              </label>
+              <div className="builder-actions">
+                <button
+                  className="theme-button"
+                  type="button"
+                  onClick={() => void saveOrderNote()}
+                >
+                  Save order note
+                </button>
+              </div>
               <div className="cart-list cart-list--locked">
                 {existingOrder.items.map((item) => (
                   <div className="cart-line cart-line--locked" key={item.id}>
@@ -1183,6 +1368,15 @@ function OrderBuilder({
                         +
                       </button>
                     </div>
+                    <input
+                      className="line-note"
+                      value={line.note}
+                      maxLength={200}
+                      placeholder="Item note (e.g. no onions)"
+                      onChange={(event) =>
+                        updateLineNote(line.key, event.target.value)
+                      }
+                    />
                   </div>
                 );
               })
@@ -1557,11 +1751,18 @@ function BillView({
   const [reverseReason, setReverseReason] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [outboxTick, setOutboxTick] = useState(0);
+
+  useEffect(
+    () => subscribeOutbox(() => setOutboxTick((tick) => tick + 1)),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
+        const canReadReport = ["owner", "manager", "cashier"].includes(role);
         const [ordersResponse, jobsResponse, paymentsResponse, reportResponse] =
           await Promise.all([
             fetch(`/api/orders?venue_id=${encodeURIComponent(venueId)}`, {
@@ -1573,23 +1774,27 @@ function BillView({
             fetch(`/api/payments?venue_id=${encodeURIComponent(venueId)}`, {
               credentials: "same-origin",
             }),
-            fetch(
-              `/api/payments/reconciliation?venue_id=${encodeURIComponent(venueId)}`,
-              { credentials: "same-origin" },
-            ),
+            canReadReport
+              ? fetch(
+                  `/api/payments/reconciliation?venue_id=${encodeURIComponent(venueId)}`,
+                  { credentials: "same-origin" },
+                )
+              : Promise.resolve(null),
           ]);
         if (
           !ordersResponse.ok ||
           !jobsResponse.ok ||
           !paymentsResponse.ok ||
-          !reportResponse.ok
+          (reportResponse && !reportResponse.ok)
         ) {
           throw new Error("billing load failed");
         }
         const data = (await ordersResponse.json()) as OrderSummary[];
         const printJobs = (await jobsResponse.json()) as PrintJobSummary[];
         const paymentRows = (await paymentsResponse.json()) as Payment[];
-        const reportRows = (await reportResponse.json()) as ReconciliationRow[];
+        const reportRows = reportResponse
+          ? ((await reportResponse.json()) as ReconciliationRow[])
+          : [];
         if (cancelled) return;
         setOrders(
           data.filter(
@@ -1607,7 +1812,7 @@ function BillView({
     return () => {
       cancelled = true;
     };
-  }, [venueId, notice]);
+  }, [venueId, notice, outboxTick]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1632,7 +1837,7 @@ function BillView({
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, notice, outboxTick]);
 
   const bill = useMemo(() => {
     if (!order) return null;
@@ -1654,6 +1859,25 @@ function BillView({
     () => payments.filter((payment) => payment.order_id === order?.id),
     [payments, order?.id],
   );
+  const billMix = useMemo(
+    () =>
+      ["cash", "mpesa_manual", "mpesa_stk", "pdq_card"].map((method) => {
+        const rows = orderPayments.filter((payment) => payment.method === method);
+        return {
+          method,
+          captured_minor: rows
+            .filter((payment) => payment.status === "confirmed")
+            .reduce((sum, payment) => sum + payment.amount_minor, 0),
+          pending_minor: rows
+            .filter((payment) => payment.status === "pending")
+            .reduce((sum, payment) => sum + payment.amount_minor, 0),
+        };
+      }),
+    [orderPayments],
+  );
+  const canSeeVenueMix = ["owner", "manager", "cashier"].includes(role);
+  const canTakePayment = ["owner", "manager", "cashier"].includes(role);
+  const canCancelPayment = ["owner", "manager", "cashier"].includes(role);
   const outstanding = order
     ? outstandingMinor(
         order.total_minor,
@@ -1766,7 +1990,8 @@ function BillView({
       order_id: order.id,
       method: payMethod,
       amount_minor: amountMinor,
-      tip_minor: toMinor(Number(tipMajor) || 0),
+      tip_minor:
+        orderPayments.length === 0 ? toMinor(Number(tipMajor) || 0) : 0,
       idempotency_key: crypto.randomUUID(),
     };
     if (payMethod === "mpesa_manual") {
@@ -1783,25 +2008,35 @@ function BillView({
     }
 
     enqueueOutbox({ url: "/api/payments", body });
-    setNotice("Payment queued.");
+    setNotice("Payment sent. The list refreshes when the server confirms it.");
+    void flushOutbox();
     setMpesaRef("");
     setMpesaPhone("");
     setApprovalCode("");
     setError("");
   }
 
-  function updatePayment(payment: Payment, action: "confirmed" | "cancelled" | "reversed") {
-    const url =
-      action === "reversed"
-        ? `/api/payments/${payment.id}/reverse`
-        : `/api/payments/${payment.id}/${action}`;
+  function updatePayment(
+    payment: Payment,
+    action: "confirmed" | "cancelled" | "reversed",
+  ) {
+    if (action === "reversed" && reverseReason.trim().length < 3) {
+      setError("Enter a reversal reason of at least 3 characters.");
+      return;
+    }
+    const endpoint =
+      action === "confirmed"
+        ? "confirm"
+        : action === "cancelled"
+          ? "cancel"
+          : "reverse";
     const body =
-      action === "reversed"
-        ? { reason: reverseReason.trim() }
-        : { status: action };
-    enqueueOutbox({ url, body });
+      action === "reversed" ? { reason: reverseReason.trim() } : {};
+    setError("");
+    enqueueOutbox({ url: `/api/payments/${payment.id}/${endpoint}`, body });
     setNotice(`${action} queued.`);
     if (action === "reversed") setReverseReason("");
+    void flushOutbox();
   }
 
   const splits = bill ? splitBill(bill.payableMinor, Math.max(1, splitCount)) : [];
@@ -1861,7 +2096,7 @@ function BillView({
                 />
               </label>
               <label>
-                <span>Tip (KES)</span>
+                <span>Tip (KES, first payment)</span>
                 <input
                   type="number"
                   min={0}
@@ -1935,6 +2170,7 @@ function BillView({
                 <span>Payment</span>
                 <strong>{money(outstanding)} outstanding</strong>
               </div>
+              {canTakePayment ? (
               <div className="payment-form">
                 <label>
                   <span>Method</span>
@@ -2006,6 +2242,11 @@ function BillView({
                   Record payment
                 </button>
               </div>
+              ) : (
+                <p className="muted">
+                  Ask a cashier, manager or owner to record payments.
+                </p>
+              )}
 
               <div className="payment-list">
                 {orderPayments.length === 0 ? (
@@ -2023,21 +2264,24 @@ function BillView({
                       <strong>{money(payment.amount_minor)}</strong>
                       {payment.status === "pending" ? (
                         <>
-                          <button
-                            className="theme-button"
-                            type="button"
-                            disabled={!canVoid}
-                            onClick={() => updatePayment(payment, "confirmed")}
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            className="theme-button"
-                            type="button"
-                            onClick={() => updatePayment(payment, "cancelled")}
-                          >
-                            Cancel
-                          </button>
+                          {canVoid ? (
+                            <button
+                              className="theme-button"
+                              type="button"
+                              onClick={() => updatePayment(payment, "confirmed")}
+                            >
+                              Confirm
+                            </button>
+                          ) : null}
+                          {canCancelPayment ? (
+                            <button
+                              className="theme-button"
+                              type="button"
+                              onClick={() => updatePayment(payment, "cancelled")}
+                            >
+                              Cancel
+                            </button>
+                          ) : null}
                         </>
                       ) : null}
                       {payment.status === "confirmed" && canVoid ? (
@@ -2065,10 +2309,10 @@ function BillView({
               ) : null}
 
               <div className="reconciliation">
-                <span className="eyebrow">Payment mix</span>
-                {report.map((row) => (
+                <span className="eyebrow">This bill</span>
+                {billMix.map((row) => (
                   <div key={row.method}>
-                    <span>{row.method}</span>
+                    <span>{row.method.replaceAll("_", " ")}</span>
                     <span>
                       {money(row.captured_minor)} captured ·{" "}
                       {money(row.pending_minor)} pending
@@ -2076,6 +2320,21 @@ function BillView({
                   </div>
                 ))}
               </div>
+
+              {canSeeVenueMix ? (
+                <div className="reconciliation">
+                  <span className="eyebrow">Venue payment mix (all tables)</span>
+                  {report.map((row) => (
+                    <div key={row.method}>
+                      <span>{row.method.replaceAll("_", " ")}</span>
+                      <span>
+                        {money(row.captured_minor)} captured ·{" "}
+                        {money(row.pending_minor)} pending
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div className="builder-actions">
@@ -2160,10 +2419,15 @@ function KdsView({ venueId }: { venueId: string }) {
         `/api/kds/tickets?venue_id=${encodeURIComponent(venueId)}${stationId ? `&station_id=${encodeURIComponent(stationId)}` : ""}`,
         { credentials: "same-origin" },
       );
-      if (!response.ok) throw new Error("tickets failed");
+      if (!response.ok) throw new Error(`tickets failed (${response.status})`);
       setTickets((await response.json()) as KdsTicket[]);
-    } catch {
-      setNotice("Could not load tickets.");
+      setNotice("");
+    } catch (cause) {
+      setNotice(
+        cause instanceof Error
+          ? `Could not load tickets: ${cause.message}`
+          : "Could not load tickets.",
+      );
     }
   }
 
@@ -2179,7 +2443,6 @@ function KdsView({ venueId }: { venueId: string }) {
         const data = (await response.json()) as Station[];
         if (cancelled) return;
         setStations(data);
-        setStationId((current) => current || data[0]?.id || "");
       } catch {
         if (!cancelled) setNotice("Could not load stations.");
       }
@@ -2237,14 +2500,17 @@ function KdsView({ venueId }: { venueId: string }) {
       <header className="workspace-head">
         <div>
           <span className="eyebrow">Kitchen display</span>
-          <h1>{selected?.name ?? "KDS"}</h1>
-          <p className="muted">Live tickets routed to this station.</p>
+          <h1>{selected?.name ?? "All stations"}</h1>
+          <p className="muted">
+            Live tickets. Pick a station to filter, or keep all stations visible.
+          </p>
         </div>
         <select
           className="bill-select"
           value={stationId}
           onChange={(event) => setStationId(event.target.value)}
         >
+          <option value="">All stations</option>
           {stations.map((station) => (
             <option key={station.id} value={station.id}>
               {station.name} · {station.type}
@@ -2258,7 +2524,10 @@ function KdsView({ venueId }: { venueId: string }) {
       {tickets.length === 0 ? (
         <section className="card empty-state">
           <h2>No tickets</h2>
-          <p className="muted">New orders for this station appear here.</p>
+          <p className="muted">
+            Sent kitchen or bar orders appear here. Choose “All stations” if you
+            are not sure which station received the order.
+          </p>
         </section>
       ) : (
         <div className="kds-grid">
@@ -2342,29 +2611,39 @@ function ShiftsView({
   const [history, setHistory] = useState<Shift[]>([]);
   const [startingCash, setStartingCash] = useState("0");
   const [countedCash, setCountedCash] = useState("0");
+  const [openNotes, setOpenNotes] = useState("");
   const [closeNotes, setCloseNotes] = useState("");
   const [report, setReport] = useState<ShiftReport | null>(null);
   const [notice, setNotice] = useState("");
-  const canClose = role === "owner" || role === "manager" || role === "cashier";
+  const [error, setError] = useState("");
+  const cashRole = ["owner", "manager", "cashier"].includes(role);
+  const isOwner = role === "owner";
 
   async function refresh() {
-    try {
-      const [activeResponse, historyResponse] = await Promise.all([
-        fetch(`/api/shifts/active?venue_id=${encodeURIComponent(venueId)}`, {
-          credentials: "same-origin",
-        }),
-        fetch(`/api/shifts?venue_id=${encodeURIComponent(venueId)}`, {
-          credentials: "same-origin",
-        }),
-      ]);
-      if (!activeResponse.ok || !historyResponse.ok) {
-        throw new Error("shifts failed");
-      }
-      setActive((await activeResponse.json()) as Shift | null);
-      setHistory((await historyResponse.json()) as Shift[]);
-    } catch {
-      setNotice("Could not load shifts.");
+    const [activeResult, historyResult] = await Promise.allSettled([
+      request<Shift | null>(
+        `/api/shifts/active?venue_id=${encodeURIComponent(venueId)}`,
+      ),
+      request<Shift[]>(`/api/shifts?venue_id=${encodeURIComponent(venueId)}`),
+    ]);
+    if (activeResult.status === "fulfilled") {
+      setActive(activeResult.value);
     }
+    if (historyResult.status === "fulfilled") {
+      setHistory(historyResult.value);
+    }
+    const issues: string[] = [];
+    if (activeResult.status === "rejected") {
+      issues.push(
+        `active shift: ${activeResult.reason instanceof Error ? activeResult.reason.message : "failed"}`,
+      );
+    }
+    if (historyResult.status === "rejected") {
+      issues.push(
+        `history: ${historyResult.reason instanceof Error ? historyResult.reason.message : "failed"}`,
+      );
+    }
+    setError(issues.length ? `Could not load shifts (${issues.join("; ")}).` : "");
   }
 
   useEffect(() => {
@@ -2380,6 +2659,7 @@ function ShiftsView({
   );
 
   async function loadReport(shiftId: string) {
+    setError("");
     try {
       const response = await fetch(`/api/shifts/${shiftId}/report`, {
         credentials: "same-origin",
@@ -2387,32 +2667,58 @@ function ShiftsView({
       if (!response.ok) throw new Error("report failed");
       setReport((await response.json()) as ShiftReport);
     } catch {
-      setNotice("Could not load the shift report.");
+      setError("Could not load the shift report.");
     }
   }
 
-  function clockIn() {
-    enqueueOutbox({
-      url: "/api/shifts/clock-in",
-      body: {
-        venue_id: venueId,
-        starting_cash_minor: toMinor(Number(startingCash) || 0),
-      },
-    });
-    setNotice("Clock-in queued.");
+  async function clockIn() {
+    setError("");
+    try {
+      await request("/api/shifts/clock-in", {
+        method: "POST",
+        body: JSON.stringify({
+          venue_id: venueId,
+          starting_cash_minor: cashRole
+            ? toMinor(Number(startingCash) || 0)
+            : 0,
+          ...(openNotes.trim() ? { notes: openNotes.trim() } : {}),
+        }),
+      });
+      setOpenNotes("");
+      setNotice("Clocked in. Your start time was recorded automatically.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Clock-in failed: ${cause.message}`
+          : "Clock-in failed.",
+      );
+    }
   }
 
-  function clockOut() {
+  async function clockOut() {
     if (!active) return;
-    enqueueOutbox({
-      url: `/api/shifts/${active.id}/clock-out`,
-      body: {
-        counted_cash_minor: toMinor(Number(countedCash) || 0),
-        ...(closeNotes.trim() ? { notes: closeNotes.trim() } : {}),
-      },
-    });
-    setNotice("Clock-out queued.");
-    setCloseNotes("");
+    setError("");
+    try {
+      await request(`/api/shifts/${active.id}/clock-out`, {
+        method: "POST",
+        body: JSON.stringify({
+          counted_cash_minor: cashRole
+            ? toMinor(Number(countedCash) || 0)
+            : 0,
+          ...(closeNotes.trim() ? { notes: closeNotes.trim() } : {}),
+        }),
+      });
+      setCloseNotes("");
+      setNotice("Clocked out. Your end time was recorded automatically.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Clock-out failed: ${cause.message}`
+          : "Clock-out failed.",
+      );
+    }
   }
 
   return (
@@ -2422,14 +2728,32 @@ function ShiftsView({
           <span className="eyebrow">Staff</span>
           <h1>Shifts</h1>
           <p className="muted">
-            Clock in, balance cash and close a Z-report at the end of service.
+            {isOwner
+              ? "Owners review shift history and Z-reports; they do not clock in or out."
+              : "Clock in and out; times are recorded when you click. Cash roles also count the drawer."}
           </p>
         </div>
       </header>
 
       {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      <section className="card shift-help">
+        <header className="area-head">
+          <h2>How shifts work</h2>
+          <span>{cashRole ? "cash & Z-report" : "time tracking"}</span>
+        </header>
+        <p className="muted">
+          {isOwner
+            ? "Every closed shift is listed below. Open a shift to see its Z-report, sales, payment mix and any notes attached to clock-in or clock-out."
+            : cashRole
+              ? "A shift starts when you clock in with the cash float, and sales are attributed to you while you are signed in. Clock out by counting the physical cash; the Z-report compares counted cash with expected cash. A manager can review any variance."
+              : "Clock in when you start and clock out when you finish. Your start and end times are recorded automatically. A note is optional if you need to explain the shift."}
+        </p>
+      </section>
 
       <div className="bill-grid">
+        {!isOwner ? (
         <section className="card bill-card">
           <header className="area-head">
             <h2>{active ? "Active shift" : "Start a shift"}</h2>
@@ -2439,23 +2763,27 @@ function ShiftsView({
             <>
               <p className="muted">
                 Clocked in {new Date(active.clock_in_at).toLocaleString("en-KE")}
+                {active.clock_in_notes ? ` · ${active.clock_in_notes}` : ""}
               </p>
               <div className="bill-controls">
+                {cashRole ? (
+                  <label>
+                    <span>Counted cash (KES)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={countedCash}
+                      onChange={(event) => setCountedCash(event.target.value)}
+                    />
+                  </label>
+                ) : null}
                 <label>
-                  <span>Counted cash (KES)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={countedCash}
-                    onChange={(event) => setCountedCash(event.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>Notes</span>
+                  <span>Clock-out note (optional)</span>
                   <input
                     value={closeNotes}
                     onChange={(event) => setCloseNotes(event.target.value)}
+                    placeholder="Anything to explain?"
                   />
                 </label>
               </div>
@@ -2470,8 +2798,7 @@ function ShiftsView({
                 <button
                   className="btn-primary"
                   type="button"
-                  disabled={!canClose}
-                  onClick={clockOut}
+                  onClick={() => void clockOut()}
                 >
                   Clock out
                 </button>
@@ -2480,14 +2807,24 @@ function ShiftsView({
           ) : (
             <>
               <div className="bill-controls">
+                {cashRole ? (
+                  <label>
+                    <span>Starting cash (KES)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={startingCash}
+                      onChange={(event) => setStartingCash(event.target.value)}
+                    />
+                  </label>
+                ) : null}
                 <label>
-                  <span>Starting cash (KES)</span>
+                  <span>Clock-in note (optional)</span>
                   <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={startingCash}
-                    onChange={(event) => setStartingCash(event.target.value)}
+                    value={openNotes}
+                    onChange={(event) => setOpenNotes(event.target.value)}
+                    placeholder="Anything to explain?"
                   />
                 </label>
               </div>
@@ -2495,7 +2832,7 @@ function ShiftsView({
                 <button
                   className="btn-primary"
                   type="button"
-                  onClick={clockIn}
+                  onClick={() => void clockIn()}
                 >
                   Clock in
                 </button>
@@ -2503,6 +2840,7 @@ function ShiftsView({
             </>
           )}
         </section>
+        ) : null}
 
         <section className="card receipt-preview">
           <header className="area-head">
@@ -2522,10 +2860,23 @@ function ShiftsView({
                 >
                   <span>
                     {new Date(shift.clock_in_at).toLocaleString("en-KE")}
-                    <small>{shift.status}</small>
+                    <small>
+                      {shift.status}
+                      {shift.clock_out_at
+                        ? ` · ${new Date(shift.clock_out_at).toLocaleTimeString("en-KE")}`
+                        : ""}
+                    </small>
+                    {shift.clock_in_notes ? (
+                      <small>In note: {shift.clock_in_notes}</small>
+                    ) : null}
+                    {shift.notes ? <small>Out note: {shift.notes}</small> : null}
                   </span>
                   <strong>
-                    {money(shift.counted_cash_minor ?? shift.starting_cash_minor)}
+                    {cashRole
+                      ? money(shift.counted_cash_minor ?? shift.starting_cash_minor)
+                      : shift.clock_out_at
+                        ? "closed"
+                        : "open"}
                   </strong>
                 </button>
               ))
@@ -2545,6 +2896,12 @@ function ShiftsView({
               Export CSV
             </a>
           </header>
+          {report.shift.clock_in_notes ? (
+            <p className="muted">Clock-in note: {report.shift.clock_in_notes}</p>
+          ) : null}
+          {report.shift.notes ? (
+            <p className="muted">Clock-out note: {report.shift.notes}</p>
+          ) : null}
           <div className="cart-summary bill-summary">
             <div>
               <span>Orders</span>
@@ -2562,18 +2919,28 @@ function ShiftsView({
               <span>Net</span>
               <span>{money(report.sales.net_minor)}</span>
             </div>
-            <div>
-              <span>Expected cash</span>
-              <span>{money(report.cash.expected_minor)}</span>
-            </div>
-            <div>
-              <span>Counted cash</span>
-              <span>{money(report.cash.counted_minor)}</span>
-            </div>
-            <div className="cart-total">
-              <span>Variance</span>
-              <strong>{money(report.cash.variance_minor)}</strong>
-            </div>
+            {report.tips?.eligible ? (
+              <div className="cart-total">
+                <span>Waiter tip ({report.tips.percent}%)</span>
+                <strong>{money(report.tips.staff_tip_minor)}</strong>
+              </div>
+            ) : null}
+            {cashRole ? (
+              <>
+                <div>
+                  <span>Expected cash</span>
+                  <span>{money(report.cash.expected_minor)}</span>
+                </div>
+                <div>
+                  <span>Counted cash</span>
+                  <span>{money(report.cash.counted_minor)}</span>
+                </div>
+                <div className="cart-total">
+                  <span>Variance</span>
+                  <strong>{money(report.cash.variance_minor)}</strong>
+                </div>
+              </>
+            ) : null}
           </div>
           <div className="split-list">
             {report.payment_mix.map((row) => (
@@ -2672,12 +3039,13 @@ function StockView({
         venue_id: venueId,
         name: name.trim(),
         unit,
-        quantity: Number(quantity) || 0,
-        par_level: Number(parLevel) || 0,
+        quantity: Math.max(0, Math.round(Number(quantity) || 0)),
+        par_level: Math.max(0, Math.round(Number(parLevel) || 0)),
       },
     });
     setNotice("Stock item queued.");
     setName("");
+    void flushOutbox();
   }
 
   function createRecipe() {
@@ -2687,29 +3055,34 @@ function StockView({
       body: {
         menu_item_id: recipeMenuId,
         stock_item_id: recipeStockId,
-        quantity: Number(recipeQuantity) || 1,
+        quantity: Math.max(1, Math.round(Number(recipeQuantity) || 1)),
       },
     });
     setNotice("Recipe queued.");
+    void flushOutbox();
   }
 
   function adjust(item: StockItem, mode: "adjust" | "count") {
-    if (adjustReason.trim().length < 3) return;
+    if (adjustReason.trim().length < 3) {
+      setNotice("Enter a reason of at least 3 characters before adjusting.");
+      return;
+    }
     enqueueOutbox({
       url: `/api/stock/${item.id}/${mode}`,
       body:
         mode === "adjust"
           ? {
-              quantity_delta: Number(adjustQuantity) || 0,
+              quantity_delta: Math.round(Number(adjustQuantity) || 0),
               reason: adjustReason.trim(),
             }
           : {
-              counted_quantity: Number(countQuantity) || 0,
+              counted_quantity: Math.max(0, Math.round(Number(countQuantity) || 0)),
               reason: adjustReason.trim(),
             },
     });
     setNotice(`${mode} queued.`);
     setAdjustReason("");
+    void flushOutbox();
   }
 
   function createSupplier() {
@@ -2720,6 +3093,7 @@ function StockView({
     });
     setNotice("Supplier queued.");
     setSupplierName("");
+    void flushOutbox();
   }
 
   const menuItems = menu?.categories.flatMap((category) => category.items) ?? [];
@@ -3167,6 +3541,1519 @@ function ReportsView({ venueId }: { venueId: string }) {
   );
 }
 
+
+function OrdersView({
+  venueId,
+  venueName,
+  tenantName,
+  role,
+}: {
+  venueId: string;
+  venueName: string;
+  tenantName: string;
+  role: Role;
+}) {
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [filter, setFilter] = useState<"active" | "all" | "closed">("active");
+  const [selectedId, setSelectedId] = useState("");
+  const [order, setOrder] = useState<Order | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [voidReason, setVoidReason] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  async function refresh() {
+    try {
+      const data = await request<OrderSummary[]>(
+        `/api/orders?venue_id=${encodeURIComponent(venueId)}`,
+      );
+      setOrders(data);
+      if (selectedId) {
+        const full = await request<Order>(
+          `/api/orders/${encodeURIComponent(selectedId)}`,
+        );
+        setOrder(full);
+        setNoteDraft(full.notes ?? "");
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Could not load orders: ${cause.message}`
+          : "Could not load orders.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [venueId]);
+
+  useEffect(
+    () =>
+      subscribeOutbox((count) => {
+        if (count === 0) void refresh();
+      }),
+    [venueId],
+  );
+
+  async function selectOrder(id: string) {
+    setSelectedId(id);
+    setError("");
+    try {
+      const full = await request<Order>(`/api/orders/${encodeURIComponent(id)}`);
+      setOrder(full);
+      setNoteDraft(full.notes ?? "");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Could not load order: ${cause.message}`
+          : "Could not load order.",
+      );
+    }
+  }
+
+  async function action(path: string, body: unknown, label: string) {
+    if (!order) return;
+    setError("");
+    try {
+      await request(`/api/orders/${order.id}${path}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setNotice(`${order.number} ${label}.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `${label} failed: ${cause.message}`
+          : `${label} failed.`,
+      );
+    }
+  }
+
+  async function saveNote() {
+    if (!order) return;
+    setError("");
+    try {
+      const updated = await request<Order>(`/api/orders/${order.id}/notes`, {
+        method: "PATCH",
+        body: JSON.stringify({ notes: noteDraft.trim() || null }),
+      });
+      setOrder(updated);
+      setNoteDraft(updated.notes ?? "");
+      setNotice(`${updated.number} note saved.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Note save failed: ${cause.message}`
+          : "Note save failed.",
+      );
+    }
+  }
+
+  const visible = orders.filter((entry) => {
+    if (filter === "all") return true;
+    const closed = entry.status === "closed" || entry.status === "voided";
+    return filter === "closed" ? closed : !closed;
+  });
+  const canClose = ["owner", "manager", "cashier"].includes(role);
+  const canVoid = role === "owner" || role === "manager";
+  const nextStatus =
+    order?.status === "sent"
+      ? "preparing"
+      : order?.status === "preparing"
+        ? "ready"
+        : order?.status === "ready"
+          ? "served"
+          : null;
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Service</span>
+          <h1>Orders</h1>
+          <p className="muted">
+            All open tabs, notes, kitchen status and closing actions in one
+            place.
+          </p>
+        </div>
+        <div className="workspace-stats">
+          <select
+            className="bill-select"
+            value={filter}
+            onChange={(event) =>
+              setFilter(event.target.value as "active" | "all" | "closed")
+            }
+          >
+            <option value="active">Active</option>
+            <option value="all">All</option>
+            <option value="closed">Closed / voided</option>
+          </select>
+          <button className="theme-button" type="button" onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      <div className="bill-grid">
+        <section className="card bill-card">
+          <header className="area-head">
+            <h2>Orders</h2>
+            <span>{visible.length}</span>
+          </header>
+          {visible.length === 0 ? (
+            <p className="muted">No orders match this filter.</p>
+          ) : (
+            <div className="order-list">
+              {visible.map((entry) => (
+                <button
+                  className={`order-row order-row--button ${entry.id === selectedId ? "order-row--active" : ""}`}
+                  key={entry.id}
+                  type="button"
+                  onClick={() => void selectOrder(entry.id)}
+                >
+                  <span>
+                    <strong>{entry.number}</strong>
+                    <small>
+                      {entry.table_name ?? "Takeaway"} · {entry.status}
+                    </small>
+                  </span>
+                  <strong>{money(entry.total_minor)}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="card bill-card">
+          {!order ? (
+            <div className="empty-state">
+              <h2>Choose an order</h2>
+              <p className="muted">
+                Select an order to see items, notes and service actions.
+              </p>
+            </div>
+          ) : (
+            <>
+              <header className="area-head">
+                <h2>{order.number}</h2>
+                <span>{order.status}</span>
+              </header>
+              <div className="cart-list cart-list--locked">
+                {order.items.map((item) => (
+                  <div className="cart-line cart-line--locked" key={item.id}>
+                    <div className="cart-line-info">
+                      <strong>
+                        {item.quantity}× {item.name}
+                      </strong>
+                      <small>
+                        {COURSE_LABELS[item.course]} · {item.status}
+                      </small>
+                      {item.notes ? <small>{item.notes}</small> : null}
+                    </div>
+                    <span className="cart-line-total">
+                      {money(item.line_total_minor)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="cart-summary bill-summary">
+                <div>
+                  <span>Subtotal</span>
+                  <span>{money(order.subtotal_minor)}</span>
+                </div>
+                <div>
+                  <span>VAT</span>
+                  <span>{money(order.tax_minor)}</span>
+                </div>
+                <div className="cart-total">
+                  <span>Total</span>
+                  <strong>{money(order.total_minor)}</strong>
+                </div>
+              </div>
+              <label className="note-field">
+                <span>Order note</span>
+                <textarea
+                  value={noteDraft}
+                  maxLength={500}
+                  rows={2}
+                  onChange={(event) => setNoteDraft(event.target.value)}
+                />
+              </label>
+              <div className="builder-actions">
+                <button
+                  className="theme-button"
+                  type="button"
+                  onClick={() => void saveNote()}
+                >
+                  Save note
+                </button>
+                {order.items.some((item) => item.status === "pending") ? (
+                  <button
+                    className="theme-button"
+                    type="button"
+                    onClick={() => void action("/send", {}, "sent to kitchen")}
+                  >
+                    Send pending
+                  </button>
+                ) : null}
+                {nextStatus ? (
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={() =>
+                      void action(
+                        "/status",
+                        { status: nextStatus, idempotency_key: crypto.randomUUID() },
+                        `moved to ${nextStatus}`,
+                      )
+                    }
+                  >
+                    Mark {nextStatus}
+                  </button>
+                ) : null}
+              </div>
+              {canClose || canVoid ? (
+                <div className="void-controls">
+                  {canClose ? (
+                    <button
+                      className="theme-button"
+                      type="button"
+                      onClick={() =>
+                        void action(
+                          "/status",
+                          { status: "closed", idempotency_key: crypto.randomUUID() },
+                          "closed",
+                        )
+                      }
+                    >
+                      Close order
+                    </button>
+                  ) : null}
+                  {canVoid ? (
+                    <>
+                      <input
+                        value={voidReason}
+                        placeholder="Void reason"
+                        onChange={(event) => setVoidReason(event.target.value)}
+                      />
+                      <button
+                        className="theme-button"
+                        type="button"
+                        disabled={voidReason.trim().length < 3}
+                        onClick={() =>
+                          void action(
+                            "/status",
+                            {
+                              status: "voided",
+                              reason: voidReason.trim(),
+                              idempotency_key: crypto.randomUUID(),
+                            },
+                            "voided",
+                          )
+                        }
+                      >
+                        Void order
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+              <p className="muted">
+                {tenantName} · {venueName}
+              </p>
+            </>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function MenuView({ venueId, role }: { venueId: string; role: Role }) {
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [stations, setStations] = useState<Station[]>([]);
+  const [categoryId, setCategoryId] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("0");
+  const [course, setCourse] = useState<Course>("main");
+  const [stationId, setStationId] = useState("");
+  const [editingItemId, setEditingItemId] = useState("");
+  const [itemPrice, setItemPrice] = useState("0");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const canEdit = role === "owner";
+
+  async function refresh() {
+    try {
+      const [menuData, stationData] = await Promise.all([
+        request<Menu>(`/api/menu?venue_id=${encodeURIComponent(venueId)}`),
+        request<Station[]>(`/api/stations?venue_id=${encodeURIComponent(venueId)}`),
+      ]);
+      setMenu(menuData);
+      setStations(stationData);
+      setCategoryId((current) => current || menuData.categories[0]?.id || "");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Could not load menu: ${cause.message}`
+          : "Could not load menu.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [venueId]);
+
+  async function createCategory() {
+    if (!categoryName.trim()) return;
+    setError("");
+    try {
+      await request("/api/menu/categories", {
+        method: "POST",
+        body: JSON.stringify({ name: categoryName.trim() }),
+      });
+      setCategoryName("");
+      setNotice("Category added.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Category failed: ${cause.message}`
+          : "Category failed.",
+      );
+    }
+  }
+
+  async function createItem() {
+    if (!categoryId || !name.trim() || Number(price) <= 0) return;
+    setError("");
+    try {
+      await request("/api/menu/items", {
+        method: "POST",
+        body: JSON.stringify({
+          category_id: categoryId,
+          name: name.trim(),
+          price_minor: toMinor(Number(price)),
+          tax_rate: 16,
+          course,
+          ...(stationId ? { station_id: stationId } : {}),
+          is_available: true,
+        }),
+      });
+      setName("");
+      setPrice("0");
+      setNotice("Menu item added.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Menu item failed: ${cause.message}`
+          : "Menu item failed.",
+      );
+    }
+  }
+
+  async function savePrice(item: MenuItem) {
+    const minor = toMinor(Number(itemPrice));
+    if (minor <= 0) return;
+    setError("");
+    try {
+      await request(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ price_minor: minor }),
+      });
+      setEditingItemId("");
+      setNotice(`${item.name} price updated.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Update failed: ${cause.message}`
+          : "Update failed.",
+      );
+    }
+  }
+
+  async function toggleAvailability(item: MenuItem) {
+    setError("");
+    try {
+      await request(`/api/menu/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_available: !item.is_available }),
+      });
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Update failed: ${cause.message}`
+          : "Update failed.",
+      );
+    }
+  }
+
+  const category = menu?.categories.find((entry) => entry.id === categoryId);
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Catalog</span>
+          <h1>Menu</h1>
+          <p className="muted">
+            Browse the menu; managers can add categories, items and mark items
+            unavailable.
+          </p>
+        </div>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      {canEdit ? (
+        <div className="bill-grid">
+          <section className="card bill-card">
+            <header className="area-head">
+              <h2>Add category</h2>
+              <span>manager</span>
+            </header>
+            <div className="bill-controls">
+              <label>
+                <span>Name</span>
+                <input
+                  value={categoryName}
+                  onChange={(event) => setCategoryName(event.target.value)}
+                />
+              </label>
+              <button
+                className="theme-button"
+                type="button"
+                disabled={!categoryName.trim()}
+                onClick={() => void createCategory()}
+              >
+                Add category
+              </button>
+            </div>
+          </section>
+          <section className="card bill-card">
+            <header className="area-head">
+              <h2>Add menu item</h2>
+              <span>manager</span>
+            </header>
+            <div className="bill-controls">
+              <label>
+                <span>Category</span>
+                <select
+                  value={categoryId}
+                  onChange={(event) => setCategoryId(event.target.value)}
+                >
+                  {(menu?.categories ?? []).map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Name</span>
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Price (KES)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={price}
+                  onChange={(event) => setPrice(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Course</span>
+                <select
+                  value={course}
+                  onChange={(event) => setCourse(event.target.value as Course)}
+                >
+                  {COURSE_ORDER.map((entry) => (
+                    <option key={entry} value={entry}>
+                      {COURSE_LABELS[entry]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Station</span>
+                <select
+                  value={stationId}
+                  onChange={(event) => setStationId(event.target.value)}
+                >
+                  <option value="">Unassigned</option>
+                  {stations.map((station) => (
+                    <option key={station.id} value={station.id}>
+                      {station.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="btn-primary"
+                type="button"
+                disabled={!categoryId || !name.trim() || Number(price) <= 0}
+                onClick={() => void createItem()}
+              >
+                Add item
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {menu ? (
+        <>
+          <div className="category-tabs">
+            {menu.categories.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className={`category-tab ${entry.id === categoryId ? "category-tab--active" : ""}`}
+                onClick={() => setCategoryId(entry.id)}
+              >
+                {entry.name}
+              </button>
+            ))}
+          </div>
+          <section className="card bill-card">
+            <header className="area-head">
+              <h2>{category?.name ?? "Menu"}</h2>
+              <span>{category?.items.length ?? 0} items</span>
+            </header>
+            <div className="menu-grid">
+              {(category?.items ?? []).map((item) => (
+                <div className="menu-item menu-item--static" key={item.id}>
+                  <span className="menu-item-name">{item.name}</span>
+                  <span className="menu-item-price">{money(item.price_minor)}</span>
+                  <span className="menu-item-course">
+                    {COURSE_LABELS[item.course]}
+                    {item.modifier_groups.length
+                      ? ` · ${item.modifier_groups.length} option groups`
+                      : ""}
+                  </span>
+                  {item.is_available ? null : (
+                    <span className="menu-item-off">Unavailable</span>
+                  )}
+                  {canEdit ? (
+                    <>
+                      {editingItemId === item.id ? (
+                        <>
+                          <input
+                            className="seat-input"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={itemPrice}
+                            onChange={(event) => setItemPrice(event.target.value)}
+                          />
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => void savePrice(item)}
+                          >
+                            Save price
+                          </button>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => setEditingItemId("")}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="theme-button"
+                          type="button"
+                          onClick={() => {
+                            setEditingItemId(item.id);
+                            setItemPrice((item.price_minor / 100).toFixed(2));
+                          }}
+                        >
+                          Edit price
+                        </button>
+                      )}
+                      <button
+                        className="theme-button"
+                        type="button"
+                        onClick={() => void toggleAvailability(item)}
+                      >
+                        {item.is_available ? "Mark unavailable" : "Mark available"}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <p className="muted">Loading menu…</p>
+      )}
+    </div>
+  );
+}
+
+function FeedbackView({ venueId }: { venueId: string }) {
+  const [rows, setRows] = useState<Feedback[]>([]);
+  const [category, setCategory] = useState<Feedback["category"]>("bug");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  async function refresh() {
+    try {
+      setRows(await request<Feedback[]>("/api/feedback"));
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Could not load feedback: ${cause.message}`
+          : "Could not load feedback.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function submitFeedback() {
+    if (subject.trim().length < 3 || message.trim().length < 5) return;
+    setError("");
+    try {
+      await request("/api/feedback", {
+        method: "POST",
+        body: JSON.stringify({
+          venue_id: venueId || undefined,
+          category,
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
+      });
+      setSubject("");
+      setMessage("");
+      setNotice("Feedback submitted. Thank you.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Feedback failed: ${cause.message}`
+          : "Feedback failed.",
+      );
+    }
+  }
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">Owner & management</span>
+          <h1>Feedback</h1>
+          <p className="muted">
+            Send bugs, improvement ideas and questions to the product team.
+          </p>
+        </div>
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      <div className="bill-grid">
+        <section className="card bill-card">
+          <header className="area-head">
+            <h2>New feedback</h2>
+            <span>owner / manager</span>
+          </header>
+          <div className="bill-controls">
+            <label>
+              <span>Type</span>
+              <select
+                value={category}
+                onChange={(event) =>
+                  setCategory(event.target.value as Feedback["category"])
+                }
+              >
+                <option value="bug">Bug</option>
+                <option value="improvement">Improvement</option>
+                <option value="question">Question</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              <span>Subject</span>
+              <input
+                value={subject}
+                maxLength={160}
+                onChange={(event) => setSubject(event.target.value)}
+              />
+            </label>
+          </div>
+          <label className="note-field">
+            <span>Details</span>
+            <textarea
+              value={message}
+              maxLength={4000}
+              rows={5}
+              onChange={(event) => setMessage(event.target.value)}
+            />
+          </label>
+          <div className="builder-actions">
+            <button
+              className="btn-primary"
+              type="button"
+              disabled={subject.trim().length < 3 || message.trim().length < 5}
+              onClick={() => void submitFeedback()}
+            >
+              Submit feedback
+            </button>
+          </div>
+        </section>
+
+        <section className="card receipt-preview">
+          <header className="area-head">
+            <h2>Submitted</h2>
+            <span>{rows.length}</span>
+          </header>
+          {rows.length === 0 ? (
+            <p className="muted">No feedback submitted yet.</p>
+          ) : (
+            <div className="split-list">
+              {rows.map((row) => (
+                <div key={row.id}>
+                  <span>
+                    <strong>{row.subject}</strong>
+                    <small>
+                      {row.category} · {row.status} ·{" "}
+                      {new Date(row.created_at).toLocaleString("en-KE")}
+                    </small>
+                    <small>{row.message}</small>
+                  </span>
+                  <small>{row.user_name}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SettingsView({
+  venueId,
+  role,
+  onStockChange,
+  staffOnly = false,
+}: {
+  venueId: string;
+  role: Role;
+  onStockChange: (enabled: boolean) => void;
+  staffOnly?: boolean;
+}) {
+  const [floor, setFloor] = useState<Floor | null>(null);
+  const [settings, setSettings] = useState<VenueSettings | null>(null);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [areaId, setAreaId] = useState("");
+  const [tableName, setTableName] = useState("");
+  const [seats, setSeats] = useState("2");
+  const [areaName, setAreaName] = useState("");
+  const [editingTableId, setEditingTableId] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editSeats, setEditSeats] = useState("2");
+  const [tipEnabled, setTipEnabled] = useState(false);
+  const [tipThreshold, setTipThreshold] = useState("0");
+  const [tipPercent, setTipPercent] = useState("0");
+  const [staffName, setStaffName] = useState("");
+  const [staffPin, setStaffPin] = useState("");
+  const [staffRole, setStaffRole] = useState<Role>("waiter");
+  const [editingStaffId, setEditingStaffId] = useState("");
+  const [editStaffName, setEditStaffName] = useState("");
+  const [editStaffPin, setEditStaffPin] = useState("");
+  const [editStaffRole, setEditStaffRole] = useState<Role>("waiter");
+  const [version, setVersion] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const isOwner = role === "owner";
+  const assignableRoles: Role[] = isOwner
+    ? ["owner", "manager", "cashier", "waiter", "kitchen", "housekeeping"]
+    : ["cashier", "waiter", "kitchen", "housekeeping"];
+
+  async function refresh() {
+    const [floorResult, settingsResult, versionResult, staffResult, shiftResult] =
+      await Promise.allSettled([
+        request<Floor>(`/api/floor?venue_id=${encodeURIComponent(venueId)}`),
+        request<VenueSettings>(
+          `/api/settings?venue_id=${encodeURIComponent(venueId)}`,
+        ),
+        request<{ app: string; edge: string; schema: number; build: string }>(
+          "/api/version",
+        ),
+        request<Staff[]>("/api/staff"),
+        request<Shift[]>(`/api/shifts?venue_id=${encodeURIComponent(venueId)}`),
+      ]);
+
+    const issues: string[] = [];
+    if (floorResult.status === "fulfilled") {
+      setFloor(floorResult.value);
+      setAreaId(
+        (current) => current || floorResult.value.areas[0]?.id || "",
+      );
+    } else {
+      issues.push(`floor: ${floorResult.reason instanceof Error ? floorResult.reason.message : "failed"}`);
+    }
+    if (settingsResult.status === "fulfilled") {
+      setSettings(settingsResult.value);
+      setTipEnabled(settingsResult.value.tip_enabled);
+      setTipThreshold(String(settingsResult.value.tip_threshold_minor / 100));
+      setTipPercent(String(settingsResult.value.tip_percent));
+    } else {
+      issues.push(`settings: ${settingsResult.reason instanceof Error ? settingsResult.reason.message : "failed"}`);
+    }
+    if (versionResult.status === "fulfilled") {
+      setVersion(
+        `app ${versionResult.value.app} · edge ${versionResult.value.edge} · schema ${versionResult.value.schema}`,
+      );
+    } else {
+      issues.push(`version: ${versionResult.reason instanceof Error ? versionResult.reason.message : "failed"}`);
+    }
+    if (staffResult.status === "fulfilled") {
+      setStaff(staffResult.value);
+    } else {
+      issues.push(`staff: ${staffResult.reason instanceof Error ? staffResult.reason.message : "failed"}`);
+    }
+    if (shiftResult.status === "fulfilled") {
+      setShifts(shiftResult.value);
+    } else {
+      issues.push(`shifts: ${shiftResult.reason instanceof Error ? shiftResult.reason.message : "failed"}`);
+    }
+    setError(
+      issues.length
+        ? `Could not load some settings data (${issues.join("; ")}).`
+        : "",
+    );
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [venueId]);
+
+  async function addArea() {
+    if (!areaName.trim()) return;
+    setError("");
+    try {
+      await request("/api/floor/areas", {
+        method: "POST",
+        body: JSON.stringify({ venue_id: venueId, name: areaName.trim() }),
+      });
+      setAreaName("");
+      setNotice("Area added.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? `Area failed: ${cause.message}` : "Area failed.",
+      );
+    }
+  }
+
+  async function addTable() {
+    if (!areaId || !tableName.trim()) return;
+    setError("");
+    try {
+      await request("/api/floor/tables", {
+        method: "POST",
+        body: JSON.stringify({
+          area_id: areaId,
+          name: tableName.trim(),
+          seats: Math.max(1, Number(seats) || 1),
+        }),
+      });
+      setTableName("");
+      setNotice("Table added.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Table failed: ${cause.message}`
+          : "Table failed.",
+      );
+    }
+  }
+
+  async function saveTable(table: FloorTable) {
+    if (!editName.trim()) return;
+    setError("");
+    try {
+      await request(`/api/floor/tables/${table.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editName.trim(),
+          seats: Math.max(1, Number(editSeats) || 1),
+        }),
+      });
+      setEditingTableId("");
+      setNotice(`${table.name} updated.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Update failed: ${cause.message}`
+          : "Update failed.",
+      );
+    }
+  }
+
+  async function removeTable(table: FloorTable) {
+    setError("");
+    try {
+      await request(`/api/floor/tables/${table.id}`, { method: "DELETE" });
+      setNotice(`${table.name} removed.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Remove failed: ${cause.message}`
+          : "Remove failed.",
+      );
+    }
+  }
+
+  async function toggleStock() {
+    if (!settings) return;
+    setError("");
+    try {
+      const updated = await request<VenueSettings>("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          venue_id: venueId,
+          stock_enabled: !settings.stock_enabled,
+        }),
+      });
+      setSettings(updated);
+      onStockChange(updated.stock_enabled);
+      setNotice(
+        updated.stock_enabled
+          ? "Stock management enabled."
+          : "Stock management disabled. Sales will no longer deplete stock.",
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Stock setting failed: ${cause.message}`
+          : "Stock setting failed.",
+      );
+    }
+  }
+
+  async function saveTips() {
+    setError("");
+    try {
+      const updated = await request<VenueSettings>("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          venue_id: venueId,
+          tip_enabled: tipEnabled,
+          tip_threshold_minor: toMinor(Number(tipThreshold) || 0),
+          tip_percent: Math.round(
+            Math.max(0, Math.min(100, Number(tipPercent) || 0)),
+          ),
+        }),
+      });
+      setSettings(updated);
+      setTipEnabled(updated.tip_enabled);
+      setTipThreshold(String(updated.tip_threshold_minor / 100));
+      setTipPercent(String(updated.tip_percent));
+      setNotice("Waiter tip rule saved.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Tip setting failed: ${cause.message}`
+          : "Tip setting failed.",
+      );
+    }
+  }
+
+  async function addStaff() {
+    if (!staffName.trim() || staffPin.length < 4) return;
+    setError("");
+    try {
+      await request("/api/staff", {
+        method: "POST",
+        body: JSON.stringify({
+          name: staffName.trim(),
+          pin: staffPin,
+          role: staffRole,
+        }),
+      });
+      setStaffName("");
+      setStaffPin("");
+      setNotice("Staff member added.");
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Staff add failed: ${cause.message}`
+          : "Staff add failed.",
+      );
+    }
+  }
+
+  async function saveStaff(member: Staff) {
+    setError("");
+    try {
+      await request(`/api/staff/${member.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...(editStaffName.trim() ? { name: editStaffName.trim() } : {}),
+          ...(editStaffPin ? { pin: editStaffPin } : {}),
+          ...(editStaffRole !== member.role ? { role: editStaffRole } : {}),
+        }),
+      });
+      setEditingStaffId("");
+      setEditStaffPin("");
+      setNotice(`${member.name} updated.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Staff update failed: ${cause.message}`
+          : "Staff update failed.",
+      );
+    }
+  }
+
+  async function removeStaff(member: Staff) {
+    setError("");
+    try {
+      await request(`/api/staff/${member.id}`, { method: "DELETE" });
+      setNotice(`${member.name} removed from the team.`);
+      await refresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Staff remove failed: ${cause.message}`
+          : "Staff remove failed.",
+      );
+    }
+  }
+
+  const onDuty = new Set(
+    shifts.filter((shift) => shift.status === "open").map((shift) => shift.user_id),
+  );
+  const canEditStaff = (member: Staff) =>
+    isOwner || (member.role !== "owner" && member.role !== "manager");
+
+  return (
+    <div className="workspace">
+      <header className="workspace-head">
+        <div>
+          <span className="eyebrow">
+            {staffOnly ? "Team" : "Configuration"}
+          </span>
+          <h1>{staffOnly ? "Staff" : "Settings"}</h1>
+          <p className="muted">
+            {staffOnly
+              ? "Add employees, change roles and see who is on duty."
+              : isOwner
+                ? "Manage staff, tables, tips, stock and system information."
+                : "Manage the team and who is on duty."}
+          </p>
+        </div>
+        {!staffOnly ? (
+          <span className="pill">{version || "Version unavailable"}</span>
+        ) : null}
+      </header>
+
+      {notice ? <div className="notice">{notice}</div> : null}
+      {error ? <p className="login-error">{error}</p> : null}
+
+      <section className="card bill-card">
+        <header className="area-head">
+          <h2>Staff</h2>
+          <span>{staff.length} active</span>
+        </header>
+        <div className="bill-controls">
+          <label>
+            <span>Name</span>
+            <input
+              value={staffName}
+              onChange={(event) => setStaffName(event.target.value)}
+              placeholder="e.g. Amina"
+            />
+          </label>
+          <label>
+            <span>PIN</span>
+            <input
+              value={staffPin}
+              inputMode="numeric"
+              maxLength={8}
+              onChange={(event) =>
+                setStaffPin(event.target.value.replace(/\D/g, ""))
+              }
+              placeholder="4–8 digits"
+            />
+          </label>
+          <label>
+            <span>Role</span>
+            <select
+              value={staffRole}
+              onChange={(event) => setStaffRole(event.target.value as Role)}
+            >
+              {assignableRoles.map((entry) => (
+                <option key={entry} value={entry}>
+                  {ROLE_LABELS[entry]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="btn-primary"
+            type="button"
+            disabled={!staffName.trim() || staffPin.length < 4}
+            onClick={() => void addStaff()}
+          >
+            Add staff
+          </button>
+        </div>
+        <div className="split-list staff-admin">
+          {staff.map((member) =>
+            editingStaffId === member.id ? (
+              <div key={member.id}>
+                <span className="staff-edit-fields">
+                  <input
+                    value={editStaffName}
+                    onChange={(event) => setEditStaffName(event.target.value)}
+                  />
+                  <input
+                    value={editStaffPin}
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="New PIN (optional)"
+                    onChange={(event) =>
+                      setEditStaffPin(event.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                  <select
+                    value={editStaffRole}
+                    onChange={(event) =>
+                      setEditStaffRole(event.target.value as Role)
+                    }
+                  >
+                    {assignableRoles.map((entry) => (
+                      <option key={entry} value={entry}>
+                        {ROLE_LABELS[entry]}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                <button
+                  className="theme-button"
+                  type="button"
+                  onClick={() => void saveStaff(member)}
+                >
+                  Save
+                </button>
+                <button
+                  className="theme-button"
+                  type="button"
+                  onClick={() => setEditingStaffId("")}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div key={member.id}>
+                <span>
+                  <strong>{member.name}</strong>
+                  <small>
+                    {ROLE_LABELS[member.role]} ·{" "}
+                    {onDuty.has(member.id) ? "on shift" : "off shift"}
+                  </small>
+                </span>
+                {canEditStaff(member) ? (
+                  <button
+                    className="theme-button"
+                    type="button"
+                    onClick={() => {
+                      setEditingStaffId(member.id);
+                      setEditStaffName(member.name);
+                      setEditStaffPin("");
+                      setEditStaffRole(member.role);
+                    }}
+                  >
+                    Edit
+                  </button>
+                ) : null}
+                {isOwner ? (
+                  <button
+                    className="theme-button"
+                    type="button"
+                    onClick={() => void removeStaff(member)}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            ),
+          )}
+        </div>
+      </section>
+
+      {isOwner && !staffOnly ? (
+        <>
+          <div className="bill-grid">
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Stock management</h2>
+                <span>
+                  {settings?.stock_enabled ? "enabled" : "disabled"}
+                </span>
+              </header>
+              <p className="muted">
+                When enabled, recipes deplete stock automatically on sale. Turn it
+                off for venues that do not want inventory tracking; the Stock page
+                is hidden too.
+              </p>
+              <div className="builder-actions">
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => void toggleStock()}
+                >
+                  {settings?.stock_enabled
+                    ? "Turn stock management off"
+                    : "Turn stock management on"}
+                </button>
+              </div>
+            </section>
+
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Waiter tips</h2>
+                <span>{tipEnabled ? "enabled" : "disabled"}</span>
+              </header>
+              <div className="bill-controls">
+                <label>
+                  <span>Enable tips</span>
+                  <select
+                    value={tipEnabled ? "on" : "off"}
+                    onChange={(event) => setTipEnabled(event.target.value === "on")}
+                  >
+                    <option value="off">Off</option>
+                    <option value="on">On</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Sales above (KES)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={tipThreshold}
+                    onChange={(event) => setTipThreshold(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Percent (%)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={tipPercent}
+                    onChange={(event) => setTipPercent(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => void saveTips()}
+                >
+                  Save tip rule
+                </button>
+              </div>
+              <p className="muted">
+                Each waiter earns the configured percent of their own net sales
+                above the threshold during a shift. This appears on their
+                Z-report.
+              </p>
+            </section>
+          </div>
+
+          <div className="bill-grid">
+            <section className="card bill-card">
+              <header className="area-head">
+                <h2>Add area</h2>
+                <span>{floor?.areas.length ?? 0} areas</span>
+              </header>
+              <div className="bill-controls">
+                <label>
+                  <span>Area name</span>
+                  <input
+                    value={areaName}
+                    onChange={(event) => setAreaName(event.target.value)}
+                    placeholder="e.g. Terrace"
+                  />
+                </label>
+                <button
+                  className="theme-button"
+                  type="button"
+                  disabled={!areaName.trim()}
+                  onClick={() => void addArea()}
+                >
+                  Add area
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <section className="card bill-card">
+            <header className="area-head">
+              <h2>Tables</h2>
+              <span>
+                {floor?.areas.flatMap((area) => area.tables).length ?? 0} tables
+              </span>
+            </header>
+            <div className="bill-controls">
+              <label>
+                <span>Area</span>
+                <select
+                  value={areaId}
+                  onChange={(event) => setAreaId(event.target.value)}
+                >
+                  {(floor?.areas ?? []).map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Table name</span>
+                <input
+                  value={tableName}
+                  onChange={(event) => setTableName(event.target.value)}
+                  placeholder="e.g. T7"
+                />
+              </label>
+              <label>
+                <span>Seats</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={seats}
+                  onChange={(event) => setSeats(event.target.value)}
+                />
+              </label>
+              <button
+                className="btn-primary"
+                type="button"
+                disabled={!areaId || !tableName.trim()}
+                onClick={() => void addTable()}
+              >
+                Add table
+              </button>
+            </div>
+            <div className="areas">
+              {(floor?.areas ?? []).map((area) => (
+                <section className="area" key={area.id}>
+                  <header className="area-head">
+                    <h3>{area.name}</h3>
+                    <span>{area.tables.length} tables</span>
+                  </header>
+                  <div className="split-list">
+                    {area.tables.map((table) =>
+                      editingTableId === table.id ? (
+                        <div key={table.id}>
+                          <span>
+                            <input
+                              value={editName}
+                              onChange={(event) => setEditName(event.target.value)}
+                            />
+                            <small>Name and seats</small>
+                          </span>
+                          <input
+                            className="seat-input"
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={editSeats}
+                            onChange={(event) => setEditSeats(event.target.value)}
+                          />
+                          <button
+                            className="theme-button"
+                            type="button"
+                            disabled={!editName.trim()}
+                            onClick={() => void saveTable(table)}
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => setEditingTableId("")}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div key={table.id}>
+                          <span>
+                            <strong>{table.name}</strong>
+                            <small>
+                              {table.seats} seats · {table.status}
+                            </small>
+                          </span>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => {
+                              setEditingTableId(table.id);
+                              setEditName(table.name);
+                              setEditSeats(String(table.seats));
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="theme-button"
+                            type="button"
+                            onClick={() => void removeTable(table)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function Placeholder({ view }: { view: NavItem }) {
   return (
     <div className="workspace">
@@ -3199,6 +5086,10 @@ function App() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [view, setView] = useState<NavItem>("Tables");
   const [queued, setQueued] = useState(getOutboxCount());
+  const [stockEnabled, setStockEnabled] = useState(true);
+  const [syncFailure, setSyncFailure] = useState<OutboxFailure | null>(null);
+
+  useEffect(() => subscribeOutboxFailures(setSyncFailure), []);
 
   useEffect(() => {
     const saved = localStorage.getItem("hpos-theme");
@@ -3229,6 +5120,7 @@ function App() {
     let cancelled = false;
 
     async function boot() {
+      const startedAt = Date.now();
       try {
         const [bootstrapResponse, healthResponse, sessionResponse] =
           await Promise.all([
@@ -3247,6 +5139,12 @@ function App() {
 
         setBootstrap(bootstrapData);
         setHealth(healthData);
+
+        const remaining = Math.max(0, 600 - (Date.now() - startedAt));
+        if (remaining) {
+          await new Promise((resolve) => setTimeout(resolve, remaining));
+        }
+        if (cancelled) return;
 
         if (sessionResponse.ok) {
           setSession((await sessionResponse.json()) as Session);
@@ -3271,6 +5169,10 @@ function App() {
         method: "POST",
         credentials: "same-origin",
       });
+      const response = await fetch("/api/bootstrap", {
+        credentials: "same-origin",
+      });
+      if (response.ok) setBootstrap((await response.json()) as Bootstrap);
     } finally {
       setSession(null);
       setPhase("login");
@@ -3282,13 +5184,39 @@ function App() {
     [bootstrap],
   );
   const venueId = bootstrap?.venues[0]?.id ?? "";
+  const role = session?.role ?? "waiter";
+  const visibleNav = useMemo(() => {
+    const allowed = ROLE_NAV[role];
+    return allowed.filter(
+      (item) => item !== "Feedback" || role === "owner" || role === "manager",
+    ).filter((item) => item !== "Stock" || stockEnabled);
+  }, [role, stockEnabled]);
 
-  if (phase === "loading") return <Splash phase={phase} />;
+  useEffect(() => {
+    if (!session || !venueId) return;
+    let cancelled = false;
+    request<VenueSettings>(
+      `/api/settings?venue_id=${encodeURIComponent(venueId)}`,
+    )
+      .then((settings) => {
+        if (!cancelled) setStockEnabled(settings.stock_enabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user_id, venueId]);
+
+  useEffect(() => {
+    if (!visibleNav.includes(view)) setView(visibleNav[0] ?? "Tables");
+  }, [visibleNav, view]);
+
+  if (phase === "loading") return <Splash phase={phase} version={__APP_VERSION__} />;
 
   if (phase === "offline") {
     return (
       <div className="center-state">
-        <Splash phase={phase} version={health?.version} />
+        <Splash phase={phase} version={health?.version ?? __APP_VERSION__} />
         <button className="btn-primary" onClick={() => location.reload()}>
           Retry
         </button>
@@ -3312,7 +5240,7 @@ function App() {
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <img src="/icon.svg" alt="" />
+          <img src={iconUrl()} alt="" />
           <div>
             <strong>{bootstrap?.tenant.name ?? "Hospitality POS"}</strong>
             <small>
@@ -3347,8 +5275,24 @@ function App() {
         </div>
       </header>
 
+      {syncFailure ? (
+        <div className="sync-error" role="alert">
+          <span>
+            One action was not saved: <strong>{syncFailure.error}</strong>
+            {syncFailure.status ? ` (${syncFailure.status})` : ""}
+          </span>
+          <button
+            className="theme-button"
+            type="button"
+            onClick={() => dismissOutboxFailure()}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
       <nav className="nav" aria-label="Main">
-        {NAV_ITEMS.map((item) => (
+        {visibleNav.map((item) => (
           <button
             key={item}
             className={`nav-item ${view === item ? "nav-item--active" : ""}`}
@@ -3363,19 +5307,43 @@ function App() {
       <main className="content">
         {view === "Tables" ? (
           <TablesView venueId={venueId} />
+        ) : view === "Orders" ? (
+          <OrdersView
+            venueId={venueId}
+            venueName={venueName}
+            tenantName={bootstrap?.tenant.name ?? "Hospitality POS"}
+            role={role}
+          />
+        ) : view === "Menu" ? (
+          <MenuView venueId={venueId} role={role} />
+        ) : view === "Feedback" ? (
+          <FeedbackView venueId={venueId} />
+        ) : view === "Staff" ? (
+          <SettingsView
+            venueId={venueId}
+            role={role}
+            onStockChange={setStockEnabled}
+            staffOnly
+          />
+        ) : view === "Settings" ? (
+          <SettingsView
+            venueId={venueId}
+            role={role}
+            onStockChange={setStockEnabled}
+          />
         ) : view === "Bill" ? (
           <BillView
             venueId={venueId}
             venueName={venueName}
             tenantName={bootstrap?.tenant.name ?? "Hospitality POS"}
-            role={session?.role ?? "waiter"}
+            role={role}
           />
         ) : view === "KDS" ? (
           <KdsView venueId={venueId} />
         ) : view === "Shifts" ? (
-          <ShiftsView venueId={venueId} role={session?.role ?? "waiter"} />
+          <ShiftsView venueId={venueId} role={role} />
         ) : view === "Stock" ? (
-          <StockView venueId={venueId} role={session?.role ?? "waiter"} />
+          <StockView venueId={venueId} role={role} />
         ) : view === "Reports" ? (
           <ReportsView venueId={venueId} />
         ) : (

@@ -2,8 +2,13 @@ import { clockInSchema, clockOutSchema } from "@hpos/contracts";
 import type { Db } from "@hpos/db";
 import { newId } from "@hpos/domain";
 import type { Hono } from "hono";
+import { normalizeRole } from "@hpos/auth";
 import { requireAuth, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
+import { getVenueSettings } from "./settings.js";
+
+const CASH_ROLES = ["owner", "manager", "cashier"];
+const SHIFT_VIEW_ROLES = ["owner", "manager", "cashier"];
 
 function toShift(row: {
   id: string;
@@ -13,6 +18,7 @@ function toShift(row: {
   starting_cash_minor: number;
   counted_cash_minor: number | null;
   notes: string | null;
+  clock_in_notes: string | null;
   clock_in_at: string;
   clock_out_at: string | null;
 }) {
@@ -24,6 +30,7 @@ function toShift(row: {
     starting_cash_minor: row.starting_cash_minor,
     counted_cash_minor: row.counted_cash_minor,
     notes: row.notes,
+    clock_in_notes: row.clock_in_notes,
     clock_in_at: row.clock_in_at,
     clock_out_at: row.clock_out_at,
   };
@@ -58,9 +65,12 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
       venue_id: venue.id,
       user_id: auth.userId,
       status: "open",
-      starting_cash_minor: parsed.data.starting_cash_minor,
+      starting_cash_minor: CASH_ROLES.includes(auth.role)
+        ? parsed.data.starting_cash_minor
+        : 0,
       counted_cash_minor: null,
       notes: null,
+      clock_in_notes: parsed.data.notes ?? null,
       opened_by: auth.userId,
       closed_by: null,
       clock_in_at: now,
@@ -101,13 +111,15 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
     );
     if (!venue) return context.json({ error: "venue_not_found" }, 404);
 
-    const shifts = await db
+    let query = db
       .selectFrom("shifts")
       .selectAll()
       .where("tenant_id", "=", auth.tenantId)
-      .where("venue_id", "=", venue.id)
-      .orderBy("clock_in_at", "desc")
-      .execute();
+      .where("venue_id", "=", venue.id);
+    if (!SHIFT_VIEW_ROLES.includes(auth.role)) {
+      query = query.where("user_id", "=", auth.userId);
+    }
+    const shifts = await query.orderBy("clock_in_at", "desc").execute();
     return context.json(shifts.map(toShift));
   });
 
@@ -137,11 +149,14 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const now = new Date().toISOString();
+    const countedCashMinor = CASH_ROLES.includes(auth.role)
+      ? parsed.data.counted_cash_minor
+      : 0;
     await db
       .updateTable("shifts")
       .set({
         status: "closed",
-        counted_cash_minor: parsed.data.counted_cash_minor,
+        counted_cash_minor: countedCashMinor,
         notes: parsed.data.notes ?? null,
         closed_by: auth.userId,
         clock_out_at: now,
@@ -151,7 +166,15 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
       .where("tenant_id", "=", auth.tenantId)
       .execute();
 
-    return context.json({ ...toShift(shift), status: "closed", clock_out_at: now });
+    return context.json({
+      ...toShift(shift),
+      status: "closed",
+      counted_cash_minor: countedCashMinor,
+      notes: parsed.data.notes ?? null,
+      closed_by: auth.userId,
+      clock_out_at: now,
+      updated_at: now,
+    });
   });
 
   app.get("/api/shifts/:id/report", requireAuth(db), async (context) => {
@@ -163,6 +186,12 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
       .where("tenant_id", "=", auth.tenantId)
       .executeTakeFirst();
     if (!shift) return context.json({ error: "shift_not_found" }, 404);
+    if (
+      !SHIFT_VIEW_ROLES.includes(auth.role) &&
+      shift.user_id !== auth.userId
+    ) {
+      return context.json({ error: "forbidden" }, 403);
+    }
 
     const upper = shift.clock_out_at ?? new Date().toISOString();
     const orders = await db
@@ -204,6 +233,22 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
       (sum, order) => sum + order.discount_minor,
       0,
     );
+    const netMinor = Math.max(0, grossMinor - discountsMinor);
+    const settings = await getVenueSettings(db, auth.tenantId, shift.venue_id);
+    const membership = await db
+      .selectFrom("memberships")
+      .select("role")
+      .where("tenant_id", "=", auth.tenantId)
+      .where("user_id", "=", shift.user_id)
+      .executeTakeFirst();
+    const staffRole = membership ? normalizeRole(membership.role) : null;
+    const eligible = settings.tip_enabled && staffRole === "waiter";
+    const staffTipMinor = eligible
+      ? Math.round(
+          Math.max(0, netMinor - settings.tip_threshold_minor) *
+            (settings.tip_percent / 100),
+        )
+      : 0;
 
     return context.json({
       shift: toShift(shift),
@@ -211,7 +256,7 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
         orders: orders.length,
         gross_minor: grossMinor,
         discounts_minor: discountsMinor,
-        net_minor: Math.max(0, grossMinor - discountsMinor),
+        net_minor: netMinor,
       },
       payment_mix: paymentMix,
       cash: {
@@ -219,6 +264,13 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
         expected_minor: expectedCash,
         counted_minor: counted,
         variance_minor: counted - expectedCash,
+      },
+      tips: {
+        enabled: settings.tip_enabled,
+        eligible,
+        threshold_minor: settings.tip_threshold_minor,
+        percent: settings.tip_percent,
+        staff_tip_minor: staffTipMinor,
       },
     });
   });
@@ -232,6 +284,12 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
       .where("tenant_id", "=", auth.tenantId)
       .executeTakeFirst();
     if (!shift) return context.json({ error: "shift_not_found" }, 404);
+    if (
+      !SHIFT_VIEW_ROLES.includes(auth.role) &&
+      shift.user_id !== auth.userId
+    ) {
+      return context.json({ error: "forbidden" }, 403);
+    }
 
     const upper = shift.clock_out_at ?? new Date().toISOString();
     const payments = await db

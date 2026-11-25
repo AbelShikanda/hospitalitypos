@@ -1,4 +1,8 @@
-import { createMenuItemSchema } from "@hpos/contracts";
+import {
+  createMenuCategorySchema,
+  createMenuItemSchema,
+  updateMenuItemSchema,
+} from "@hpos/contracts";
 import type { Db } from "@hpos/db";
 import { newId } from "@hpos/domain";
 import type { Hono } from "hono";
@@ -152,9 +156,98 @@ export function registerMenuRoutes(app: Hono<AppEnv>, db: Db) {
   });
 
   app.post(
+    "/api/menu/categories",
+    requireAuth(db),
+    requireRole("owner"),
+    async (context) => {
+      const body = await context.req.json().catch(() => null);
+      const parsed = createMenuCategorySchema.safeParse(body);
+      if (!parsed.success) {
+        return context.json({ error: "invalid_input" }, 400);
+      }
+      const auth = context.get("auth");
+      const category = {
+        id: newId(),
+        tenant_id: auth.tenantId,
+        name: parsed.data.name,
+        sort_order: parsed.data.sort_order,
+        created_at: new Date().toISOString(),
+      };
+      await db.insertInto("menu_categories").values(category).execute();
+      return context.json(category, 201);
+    },
+  );
+
+  app.patch(
+    "/api/menu/items/:id",
+    requireAuth(db),
+    requireRole("owner"),
+    async (context) => {
+      const body = await context.req.json().catch(() => null);
+      const parsed = updateMenuItemSchema.safeParse(body);
+      if (!parsed.success) {
+        return context.json({ error: "invalid_input" }, 400);
+      }
+      const auth = context.get("auth");
+      const item = await db
+        .selectFrom("menu_items")
+        .selectAll()
+        .where("id", "=", context.req.param("id"))
+        .where("tenant_id", "=", auth.tenantId)
+        .executeTakeFirst();
+      if (!item) return context.json({ error: "item_not_found" }, 404);
+
+      if (parsed.data.station_id) {
+        const station = await db
+          .selectFrom("stations")
+          .select("id")
+          .where("id", "=", parsed.data.station_id)
+          .where("tenant_id", "=", auth.tenantId)
+          .executeTakeFirst();
+        if (!station) return context.json({ error: "station_not_found" }, 404);
+      }
+
+      await db
+        .updateTable("menu_items")
+        .set({
+          ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+          ...(parsed.data.description !== undefined
+            ? { description: parsed.data.description }
+            : {}),
+          ...(parsed.data.price_minor !== undefined
+            ? { price_minor: parsed.data.price_minor }
+            : {}),
+          ...(parsed.data.tax_rate !== undefined
+            ? { tax_rate: parsed.data.tax_rate }
+            : {}),
+          ...(parsed.data.course !== undefined
+            ? { course: parsed.data.course }
+            : {}),
+          ...(parsed.data.station_id !== undefined
+            ? { station_id: parsed.data.station_id }
+            : {}),
+          ...(parsed.data.is_available !== undefined
+            ? { is_available: parsed.data.is_available ? 1 : 0 }
+            : {}),
+        })
+        .where("id", "=", item.id)
+        .where("tenant_id", "=", auth.tenantId)
+        .execute();
+
+      const updated = await db
+        .selectFrom("menu_items")
+        .selectAll()
+        .where("id", "=", item.id)
+        .where("tenant_id", "=", auth.tenantId)
+        .executeTakeFirstOrThrow();
+      return context.json(updated);
+    },
+  );
+
+  app.post(
     "/api/menu/items",
     requireAuth(db),
-    requireRole("owner", "manager"),
+    requireRole("owner"),
     async (context) => {
       const body = await context.req.json().catch(() => null);
       const parsed = createMenuItemSchema.safeParse(body);

@@ -53,7 +53,7 @@ if (syncUrl && syncToken && tenant && venue) {
       tenantId: tenant.id,
       venueId: venue.id,
       version,
-      schemaVersion: 14,
+      schemaVersion: 16,
     }).catch(() => undefined);
   }, 30000).unref();
 }

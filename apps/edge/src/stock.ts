@@ -10,6 +10,7 @@ import { newId } from "@hpos/domain";
 import type { Hono } from "hono";
 import { requireAuth, requireRole, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
+import { isStockEnabled } from "./settings.js";
 
 interface DepletionLine {
   itemId: string;
@@ -69,6 +70,7 @@ export async function depleteStockForOrder(
   lines: DepletionLine[],
   actorUserId: string | null,
 ): Promise<void> {
+  if (!(await isStockEnabled(db, tenantId, venueId))) return;
   const itemIds = [...new Set(lines.map((line) => line.itemId))];
   if (!itemIds.length) return;
 
@@ -196,7 +198,11 @@ export async function reverseStockForOrder(
 }
 
 export function registerStockRoutes(app: Hono<AppEnv>, db: Db) {
-  app.get("/api/stock", requireAuth(db), async (context) => {
+  app.get(
+    "/api/stock",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,
@@ -220,7 +226,11 @@ export function registerStockRoutes(app: Hono<AppEnv>, db: Db) {
     );
   });
 
-  app.get("/api/stock/alerts", requireAuth(db), async (context) => {
+  app.get(
+    "/api/stock/alerts",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,
@@ -350,7 +360,11 @@ export function registerStockRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
-  app.get("/api/stock/movements", requireAuth(db), async (context) => {
+  app.get(
+    "/api/stock/movements",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,
@@ -419,7 +433,11 @@ export function registerStockRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
-  app.get("/api/recipes", requireAuth(db), async (context) => {
+  app.get(
+    "/api/recipes",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const recipes = await db
       .selectFrom("recipes")
@@ -429,7 +447,11 @@ export function registerStockRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json(recipes);
   });
 
-  app.get("/api/suppliers", requireAuth(db), async (context) => {
+  app.get(
+    "/api/suppliers",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,

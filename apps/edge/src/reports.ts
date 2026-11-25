@@ -1,7 +1,7 @@
 import { extractVAT } from "@hpos/domain";
 import type { Db } from "@hpos/db";
 import type { Hono } from "hono";
-import { requireAuth, type AppEnv } from "./auth.js";
+import { requireAuth, requireRole, type AppEnv } from "./auth.js";
 import { resolveVenue } from "./context.js";
 
 function bound(value: string | undefined, end: boolean): string | undefined {
@@ -223,7 +223,11 @@ function csv(rows: Array<Array<string | number>>): string {
 }
 
 export function registerReportRoutes(app: Hono<AppEnv>, db: Db) {
-  app.get("/api/reports", requireAuth(db), async (context) => {
+  app.get(
+    "/api/reports",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,
@@ -236,7 +240,11 @@ export function registerReportRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json({ from, to, venue_id: venue.id, ...buildReport(data) });
   });
 
-  app.get("/api/reports/export", requireAuth(db), async (context) => {
+  app.get(
+    "/api/reports/export",
+    requireAuth(db),
+    requireRole("owner", "manager"),
+    async (context) => {
     const auth = context.get("auth");
     const venue = await resolveVenue(
       db,

@@ -4,6 +4,7 @@ import {
   createOrderSchema,
   mergeOrderSchema,
   moveOrderSchema,
+  updateOrderNotesSchema,
   updateOrderStatusSchema,
   sendOrderSchema,
   type CreateOrderItem,
@@ -22,6 +23,13 @@ import { resolveVenue } from "./context.js";
 import { publishEvent } from "./events.js";
 import { depleteStockForOrder, reverseStockForOrder } from "./stock.js";
 import { recordOutbox } from "./sync.js";
+
+function waiterBlocked(
+  auth: { role: string; userId: string },
+  order: { opened_by: string | null },
+): boolean {
+  return auth.role === "waiter" && order.opened_by !== auth.userId;
+}
 
 export async function loadOrder(db: Db, tenantId: string, orderId: string) {
   const order = await db
@@ -314,7 +322,11 @@ function buildItemRows(
 }
 
 export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
-  app.post("/api/orders", requireAuth(db), async (context) => {
+  app.post(
+    "/api/orders",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter"),
+    async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = createOrderSchema.safeParse(body);
     if (!parsed.success) {
@@ -559,7 +571,11 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json(result, 201);
   });
 
-  app.post("/api/orders/:id/items", requireAuth(db), async (context) => {
+  app.post(
+    "/api/orders/:id/items",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter"),
+    async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = addOrderItemsSchema.safeParse(body);
     if (!parsed.success) {
@@ -569,7 +585,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const auth = context.get("auth");
     const input = parsed.data;
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
     if (order.status === "closed" || order.status === "voided") {
       return context.json({ error: "order_closed" }, 409);
     }
@@ -776,13 +794,16 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     if (!venue) return context.json({ error: "venue_not_found" }, 404);
 
     const status = context.req.query("status");
-    const query = db
+    let query = db
       .selectFrom("orders")
       .leftJoin("dining_tables", "dining_tables.id", "orders.table_id")
       .selectAll("orders")
       .select("dining_tables.name as table_name")
       .where("orders.tenant_id", "=", auth.tenantId)
       .where("orders.venue_id", "=", venue.id);
+    if (auth.role === "waiter") {
+      query = query.where("orders.opened_by", "=", auth.userId);
+    }
 
     const orders = await (
       status ? query.where("orders.status", "=", status) : query
@@ -796,11 +817,17 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
   app.get("/api/orders/:id", requireAuth(db), async (context) => {
     const auth = context.get("auth");
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
     return context.json(order);
   });
 
-  app.post("/api/orders/:id/send", requireAuth(db), async (context) => {
+  app.post(
+    "/api/orders/:id/send",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter", "kitchen"),
+    async (context) => {
     const rawBody = await context.req.json().catch(() => null);
     const parsed = sendOrderSchema.safeParse(rawBody ?? {});
     if (!parsed.success) {
@@ -810,7 +837,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
 
     const auth = context.get("auth");
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
 
     const isOpen = order.status === "open";
     const alreadySent = ["sent", "preparing", "ready", "served"].includes(
@@ -882,7 +911,11 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json(result);
   });
 
-  app.post("/api/orders/:id/move", requireAuth(db), async (context) => {
+  app.post(
+    "/api/orders/:id/move",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter"),
+    async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = moveOrderSchema.safeParse(body);
     if (!parsed.success) {
@@ -892,7 +925,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     const auth = context.get("auth");
     const input = parsed.data;
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
     if (order.status === "closed" || order.status === "voided") {
       return context.json({ error: "order_closed" }, 409);
     }
@@ -1003,7 +1038,11 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     return context.json(result);
   });
 
-  app.post("/api/orders/:id/merge", requireAuth(db), async (context) => {
+  app.post(
+    "/api/orders/:id/merge",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter"),
+    async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = mergeOrderSchema.safeParse(body);
     if (!parsed.success) {
@@ -1033,7 +1072,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const source = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!source) return context.json({ error: "order_not_found" }, 404);
+    if (!source || waiterBlocked(auth, source)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
     if (source.status === "closed" || source.status === "voided") {
       return context.json({ error: "order_closed" }, 409);
     }
@@ -1042,7 +1083,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const target = await loadOrder(db, auth.tenantId, input.target_order_id);
-    if (!target) return context.json({ error: "target_not_found" }, 404);
+    if (!target || waiterBlocked(auth, target)) {
+      return context.json({ error: "target_not_found" }, 404);
+    }
     if (target.venue_id !== source.venue_id) {
       return context.json({ error: "venue_mismatch" }, 400);
     }
@@ -1235,6 +1278,58 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     },
   );
 
+  app.patch(
+    "/api/orders/:id/notes",
+    requireAuth(db),
+    requireRole("owner", "manager", "cashier", "waiter"),
+    async (context) => {
+    const body = await context.req.json().catch(() => null);
+    const parsed = updateOrderNotesSchema.safeParse(body);
+    if (!parsed.success) {
+      return context.json({ error: "invalid_input" }, 400);
+    }
+
+    const auth = context.get("auth");
+    const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
+    if (order.status === "closed" || order.status === "voided") {
+      return context.json({ error: "order_closed" }, 409);
+    }
+
+    const now = new Date().toISOString();
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable("orders")
+        .set({
+          notes: parsed.data.notes?.trim() || null,
+          updated_at: now,
+        })
+        .where("id", "=", order.id)
+        .where("tenant_id", "=", auth.tenantId)
+        .execute();
+
+      await trx
+        .insertInto("order_events")
+        .values({
+          id: newId(),
+          tenant_id: auth.tenantId,
+          order_id: order.id,
+          type: "notes_updated",
+          data: JSON.stringify({ notes: parsed.data.notes ?? null }),
+          idempotency_key: null,
+          actor_user_id: auth.userId,
+          created_at: now,
+        })
+        .execute();
+    });
+
+    const result = await loadOrder(db, auth.tenantId, order.id);
+    if (result) emitOrderEvent("order_notes_updated", result);
+    return context.json(result);
+  });
+
   app.post("/api/orders/:id/status", requireAuth(db), async (context) => {
     const body = await context.req.json().catch(() => null);
     const parsed = updateOrderStatusSchema.safeParse(body);
@@ -1255,7 +1350,9 @@ export function registerOrderRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const order = await loadOrder(db, auth.tenantId, context.req.param("id"));
-    if (!order) return context.json({ error: "order_not_found" }, 404);
+    if (!order || waiterBlocked(auth, order)) {
+      return context.json({ error: "order_not_found" }, 404);
+    }
 
     if (order.status === next) {
       return context.json(order);

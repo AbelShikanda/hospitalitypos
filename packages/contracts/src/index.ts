@@ -106,6 +106,48 @@ export const createVenueSchema = z.object({
   name: z.string().min(1).max(120),
 });
 
+export const updateVenueSettingsSchema = z.object({
+  venue_id: ulid,
+  stock_enabled: z.boolean().optional(),
+  tip_enabled: z.boolean().optional(),
+  tip_threshold_minor: z.number().int().nonnegative().optional(),
+  tip_percent: z.number().min(0).max(100).optional(),
+});
+
+export const venueSettingsSchema = z.object({
+  venue_id: ulid,
+  stock_enabled: z.boolean(),
+  tip_enabled: z.boolean(),
+  tip_threshold_minor: z.number().int().nonnegative(),
+  tip_percent: z.number().int().min(0).max(100),
+});
+
+export const feedbackCategorySchema = z.enum([
+  "bug",
+  "improvement",
+  "question",
+  "other",
+]);
+
+export const createFeedbackSchema = z.object({
+  venue_id: ulid.optional(),
+  category: feedbackCategorySchema.default("other"),
+  subject: z.string().min(3).max(160),
+  message: z.string().min(5).max(4000),
+});
+
+export const feedbackSchema = z.object({
+  id: ulid,
+  venue_id: ulid.nullable(),
+  user_id: ulid,
+  user_name: z.string(),
+  category: feedbackCategorySchema,
+  subject: z.string(),
+  message: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+});
+
 export const venueSchema = z.object({
   id: ulid,
   tenant_id: ulid,
@@ -219,10 +261,11 @@ export const createSupplierSchema = z.object({
 export const clockInSchema = z.object({
   venue_id: ulid,
   starting_cash_minor: z.number().int().nonnegative().default(0),
+  notes: z.string().max(500).optional(),
 });
 
 export const clockOutSchema = z.object({
-  counted_cash_minor: z.number().int().nonnegative(),
+  counted_cash_minor: z.number().int().nonnegative().default(0),
   notes: z.string().max(500).optional(),
 });
 
@@ -240,6 +283,7 @@ export const shiftSchema = z.object({
   starting_cash_minor: z.number().int().nonnegative(),
   counted_cash_minor: z.number().int().nonnegative().nullable(),
   notes: z.string().nullable(),
+  clock_in_notes: z.string().nullable().optional(),
   clock_in_at: z.string(),
   clock_out_at: z.string().nullable(),
 });
@@ -293,7 +337,20 @@ export const roleSchema = z.enum([
   "cashier",
   "waiter",
   "kitchen",
+  "housekeeping",
 ]);
+
+export const createStaffSchema = z.object({
+  name: z.string().min(1).max(120),
+  pin: z.string().regex(/^\d{4,8}$/),
+  role: roleSchema,
+});
+
+export const updateStaffSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  pin: z.string().regex(/^\d{4,8}$/).optional(),
+  role: roleSchema.optional(),
+});
 
 export const pinLoginSchema = z.object({
   tenant_id: ulid,
@@ -306,6 +363,7 @@ export const staffMemberSchema = z.object({
   id: ulid,
   name: z.string().min(1),
   role: roleSchema,
+  is_active: z.boolean().optional(),
 });
 
 export const bootstrapSchema = z.object({
@@ -401,6 +459,37 @@ export const createMenuItemSchema = z.object({
   course: courseSchema.default("main"),
   station_id: ulid.nullable().optional(),
   is_available: z.boolean().default(true),
+});
+
+export const updateMenuItemSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).nullable().optional(),
+  price_minor: z.number().int().positive().optional(),
+  tax_rate: z.number().int().min(0).max(100).optional(),
+  course: courseSchema.optional(),
+  station_id: ulid.nullable().optional(),
+  is_available: z.boolean().optional(),
+});
+
+export const createMenuCategorySchema = z.object({
+  name: z.string().min(1).max(120),
+  sort_order: z.number().int().nonnegative().default(0),
+});
+
+export const updateTableSchema = z.object({
+  name: z.string().min(1).max(40).optional(),
+  seats: z.number().int().min(1).max(50).optional(),
+  area_id: ulid.optional(),
+});
+
+export const createAreaSchema = z.object({
+  venue_id: ulid,
+  name: z.string().min(1).max(120),
+  sort_order: z.number().int().nonnegative().default(0),
+});
+
+export const updateOrderNotesSchema = z.object({
+  notes: z.string().max(500).nullable(),
 });
 
 export const createTableSchema = z.object({
@@ -531,6 +620,8 @@ export type Venue = z.infer<typeof venueSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type PinLogin = z.infer<typeof pinLoginSchema>;
 export type StaffMember = z.infer<typeof staffMemberSchema>;
+export type CreateStaff = z.infer<typeof createStaffSchema>;
+export type UpdateStaff = z.infer<typeof updateStaffSchema>;
 export type Bootstrap = z.infer<typeof bootstrapSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type MenuModifier = z.infer<typeof menuModifierSchema>;
@@ -542,6 +633,15 @@ export type FloorTable = z.infer<typeof floorTableSchema>;
 export type FloorArea = z.infer<typeof floorAreaSchema>;
 export type Floor = z.infer<typeof floorSchema>;
 export type CreateMenuItem = z.infer<typeof createMenuItemSchema>;
+export type UpdateMenuItem = z.infer<typeof updateMenuItemSchema>;
+export type CreateMenuCategory = z.infer<typeof createMenuCategorySchema>;
+export type UpdateTable = z.infer<typeof updateTableSchema>;
+export type CreateArea = z.infer<typeof createAreaSchema>;
+export type UpdateOrderNotes = z.infer<typeof updateOrderNotesSchema>;
+export type UpdateVenueSettings = z.infer<typeof updateVenueSettingsSchema>;
+export type VenueSettings = z.infer<typeof venueSettingsSchema>;
+export type CreateFeedback = z.infer<typeof createFeedbackSchema>;
+export type Feedback = z.infer<typeof feedbackSchema>;
 export type CreateTable = z.infer<typeof createTableSchema>;
 export type CreateOrderItem = z.infer<typeof createOrderItemSchema>;
 export type CreateOrder = z.infer<typeof createOrderSchema>;

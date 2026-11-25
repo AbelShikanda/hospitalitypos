@@ -1474,3 +1474,80 @@
     flex-direction: column;
   }
 }
+
+.cart-line {
+  flex-wrap: wrap;
+}
+
+.line-note {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.tab-action--wide {
+  flex-basis: 100%;
+}
+
+.menu-item--static {
+  cursor: default;
+}
+
+.menu-item--static .theme-button {
+  margin-top: 8px;
+}
+
+.order-row--active {
+  color: var(--brand-bright);
+}
+
+.seat-input {
+  width: 84px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font: inherit;
+}
+
+.sync-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--danger, #b42318);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger, #b42318) 14%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.staff-section-label {
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.staff-grid--owner .staff-card {
+  border-color: var(--brand-bright);
+}
+
+.staff-admin > div {
+  flex-wrap: wrap;
+}
+
+.staff-edit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

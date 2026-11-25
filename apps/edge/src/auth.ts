@@ -69,6 +69,7 @@ export function requireAuth(db: Db) {
       .select(["id", "name", "tenant_id"])
       .where("id", "=", session.user_id)
       .where("tenant_id", "=", session.tenant_id)
+      .where("is_active", "=", 1)
       .executeTakeFirst();
 
     if (!user) return context.json({ error: "unauthorized" }, 401);

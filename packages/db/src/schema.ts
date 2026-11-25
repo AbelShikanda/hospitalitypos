@@ -15,11 +15,37 @@ export interface VenuesTable {
   created_at: Timestamp;
 }
 
+export interface VenueSettingsTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string;
+  stock_enabled: number;
+  tip_enabled: number;
+  tip_threshold_minor: number;
+  tip_percent: number;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface FeedbackTable {
+  id: string;
+  tenant_id: string;
+  venue_id: string | null;
+  user_id: string;
+  category: string;
+  subject: string;
+  message: string;
+  status: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface UsersTable {
   id: string;
   tenant_id: string;
   name: string;
   pin_hash: string;
+  is_active: number;
   created_at: Timestamp;
 }
 
@@ -330,6 +356,7 @@ export interface ShiftsTable {
   starting_cash_minor: number;
   counted_cash_minor: number | null;
   notes: string | null;
+  clock_in_notes: string | null;
   opened_by: string;
   closed_by: string | null;
   clock_in_at: Timestamp;
@@ -397,6 +424,8 @@ export interface Database {
   tenants: TenantsTable;
   stations: StationsTable;
   venues: VenuesTable;
+  venue_settings: VenueSettingsTable;
+  feedback: FeedbackTable;
   users: UsersTable;
   memberships: MembershipsTable;
   sessions: SessionsTable;
