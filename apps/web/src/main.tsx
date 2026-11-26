@@ -19,6 +19,16 @@ import {
   subscribeOutboxFailures,
   type OutboxFailure,
 } from "./outbox.js";
+import { navVisibleInMode, resolveAppMode } from "./mode.js";
+import {
+  applyUpdate,
+  checkForUpdates,
+  getUpdateState,
+  setBillOpen,
+  startUpdateRegistration,
+  subscribeToUpdates,
+  type UpdateState,
+} from "./updates.js";
 
 type Role =
   | "owner"
@@ -1813,6 +1823,12 @@ function BillView({
       cancelled = true;
     };
   }, [venueId, notice, outboxTick]);
+
+  useEffect(() => {
+    const open = Boolean(order && order.status === "open");
+    setBillOpen(open);
+    return () => setBillOpen(false);
+  }, [order?.id, order?.status]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -4393,6 +4409,19 @@ function SettingsView({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const isOwner = role === "owner";
+  async function checkUpdates() {
+    const result = await checkForUpdates();
+    if (result === "unsupported") {
+      setNotice("Update checks are available in the installed app.");
+      return;
+    }
+    if (result === "error") {
+      setError("Could not check for updates.");
+      return;
+    }
+    setError("");
+    setNotice("Checked for updates.");
+  }
   const assignableRoles: Role[] = isOwner
     ? ["owner", "manager", "cashier", "waiter", "kitchen", "housekeeping"]
     : ["cashier", "waiter", "kitchen", "housekeeping"];
@@ -4678,7 +4707,18 @@ function SettingsView({
           </p>
         </div>
         {!staffOnly ? (
-          <span className="pill">{version || "Version unavailable"}</span>
+          <div className="bill-controls">
+            <span className="pill">{version || "Version unavailable"}</span>
+            {isOwner ? (
+              <button
+                className="theme-button"
+                type="button"
+                onClick={() => void checkUpdates()}
+              >
+                Check for updates
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -5088,8 +5128,19 @@ function App() {
   const [queued, setQueued] = useState(getOutboxCount());
   const [stockEnabled, setStockEnabled] = useState(true);
   const [syncFailure, setSyncFailure] = useState<OutboxFailure | null>(null);
+  const [updateState, setUpdateState] =
+    useState<UpdateState>(getUpdateState);
 
   useEffect(() => subscribeOutboxFailures(setSyncFailure), []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToUpdates(setUpdateState);
+    const stop = startUpdateRegistration();
+    return () => {
+      stop();
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("hpos-theme");
@@ -5185,15 +5236,25 @@ function App() {
   );
   const venueId = bootstrap?.venues[0]?.id ?? "";
   const role = session?.role ?? "waiter";
+  const appMode = resolveAppMode(import.meta.env.VITE_APP_MODE, health?.mode);
   const visibleNav = useMemo(() => {
     const allowed = ROLE_NAV[role];
-    return allowed.filter(
-      (item) => item !== "Feedback" || role === "owner" || role === "manager",
-    ).filter((item) => item !== "Stock" || stockEnabled);
-  }, [role, stockEnabled]);
+    return allowed
+      .filter(
+        (item) => item !== "Feedback" || role === "owner" || role === "manager",
+      )
+      .filter((item) => item !== "Stock" || stockEnabled)
+      .filter((item) => navVisibleInMode(item, appMode));
+  }, [role, stockEnabled, appMode]);
 
   useEffect(() => {
-    if (!session || !venueId) return;
+    if (
+      !session ||
+      !venueId ||
+      !["owner", "manager"].includes(session.role)
+    ) {
+      return;
+    }
     let cancelled = false;
     request<VenueSettings>(
       `/api/settings?venue_id=${encodeURIComponent(venueId)}`,
@@ -5287,6 +5348,23 @@ function App() {
             onClick={() => dismissOutboxFailure()}
           >
             Dismiss
+          </button>
+        </div>
+      ) : null}
+      {updateState.needRefresh ? (
+        <div className="sync-error update-banner" role="status">
+          <span>
+            {updateState.billOpen
+              ? "A new version is ready. Finish the open bill, then reload."
+              : "A new version is ready."}
+          </span>
+          <button
+            className="theme-button"
+            type="button"
+            disabled={updateState.billOpen || updateState.checking}
+            onClick={() => void applyUpdate()}
+          >
+            {updateState.checking ? "Reloading..." : "Reload"}
           </button>
         </div>
       ) : null}

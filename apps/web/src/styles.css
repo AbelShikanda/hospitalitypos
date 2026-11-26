@@ -1530,6 +1530,11 @@
   font-size: 13px;
 }
 
+.update-banner {
+  border-color: var(--brand-bright);
+  background: var(--brand-tint);
+}
+
 .staff-section-label {
   margin-top: 18px;
   color: var(--text-muted);

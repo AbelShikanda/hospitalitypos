@@ -50,20 +50,24 @@ start; Settings → Danger Zone can restart/shut down the edge.
 
 - [x] Configurable Vite `base` for GitHub Pages subpaths;
       `import.meta.env.BASE_URL` used for icons; relative manifest start/scope.
-- [ ] Router basename and correct service-worker scope once a router/SW lands.
-- [ ] Mode detection (`VITE_APP_MODE` + `/api/health` probe) and feature flags;
-      hide edge-only UI (printers, KDS, lifecycle) in hosted mode.
+- [ ] Router basename once a router lands; service-worker registration and scope
+      derive from the configured Vite base.
+- [x] Mode detection (`VITE_APP_MODE` + `/api/health` probe) and feature flags;
+      KDS navigation is hidden in hosted mode; lifecycle/printer controls will
+      use the same flags when added.
 - [ ] Data-layer repository interface with IndexedDB adapter (hosted) and edge
       API adapter (edge).
 - [x] Inject `__APP_VERSION__` (semver + git SHA + build time); serve
       `/version.json` and `/api/version` (`{ app, edge, schema, build }`).
 - [x] Manifest + icons (192/512/maskable) + `theme_color`/`background_color`.
-- [ ] iOS `apple-touch-startup-image` pipeline.
+- [x] iOS `apple-touch-startup-image` pipeline: generated portrait launch
+      images for current iPhone/iPad sizes (`pnpm splash:generate`).
 - [x] In-app splash: logo, version, status ("Starting…"/"Offline"/"Connecting"),
       min ~600 ms; offline retry state.
-- [ ] SW update flow (`registerType: 'prompt'`): poll on interval + focus,
-      non-blocking "Update available" banner with changelog, defer reload while
-      a bill is open, "Check for updates" in Settings.
+- [x] SW update flow (`registerType: 'prompt'`): poll on interval + focus,
+      non-blocking "Update available" banner, defer reload while a bill is open,
+      "Check for updates" in Settings.
+- [ ] SW update banner includes release changelog details.
 - [ ] Edge updater: check signed image tags, notify admins, configurable update
       window, rollback on failed health check.
 - [ ] Settings → Danger Zone: Restart / Shut down server with role + PIN
@@ -73,6 +77,7 @@ start; Settings → Danger Zone can restart/shut down the edge.
 - [ ] "Server stopped" screen + restart instructions; hide lifecycle in hosted.
 - [ ] CI: publish hosted build to Pages; build edge image; create GitHub Release
       with hosted zip, edge bundle, checksums, changelog.
+- [x] CI runs the Playwright role/settings/shift smoke suite.
 - [ ] Edge one-command launcher (`start.sh`/`start.bat`/`start.ps1`): Docker
       check, `.env` bootstrap, seed, start, print LAN URL + QR.
 - [ ] Hosted-mode demo banner (seeded data, not for real money, no hardware).
@@ -185,8 +190,12 @@ Z-report that balances.
 - [x] Kitchen role gets KDS + Shifts; housekeeping is limited to Shifts.
 - [x] Dedicated Staff page for adding, editing, role changes and on-duty status;
       managers have no Settings navigation.
+- [x] Server-side route guard limits kitchen to KDS/shifts and housekeeping to
+      shifts; owners cannot clock in or out.
 - [x] Owner shift view is history/Z-report only; shift history and reports show
       clock-in and clock-out notes.
+- [x] Playwright E2E smoke: role navigation, Staff CRUD, Settings areas/tables,
+      shift notes and the stock navigation toggle.
 
 ---
 
