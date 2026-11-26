@@ -15,6 +15,7 @@
     "typecheck": "turbo run typecheck",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "splash:generate": "node scripts/generate-splash.mjs",
     "db:migrate": "pnpm --filter @hpos/db migrate",
     "db:seed": "pnpm --filter @hpos/db seed",
     "license:check": "node -e \"console.log('All runtime deps are OSS (MIT/Apache-2.0). Verify before release.')\"",
@@ -29,8 +30,9 @@
     ]
   },
   "devDependencies": {
-    "@hpos/config": "workspace:*",
     "@eslint/js": "^9.0.0",
+    "@hpos/config": "workspace:*",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "globals": "^15.0.0",

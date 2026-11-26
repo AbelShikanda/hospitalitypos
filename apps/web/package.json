@@ -13,13 +13,15 @@
     "@hpos/domain": "workspace:*",
     "@hpos/ui": "workspace:*",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "workbox-window": "^7.4.1"
   },
   "devDependencies": {
     "@hpos/config": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }
