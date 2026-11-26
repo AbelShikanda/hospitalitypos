@@ -1403,7 +1403,7 @@ describe("menu, floor and orders", () => {
 
   it("tracks shifts with a Z-report and CSV export", async () => {
     const db = await makeDb();
-    const fixture = await addTenant(db, "Alpha");
+    const fixture = await addTenant(db, "Alpha", "manager");
     const menu = await addMenu(db, fixture);
     const app = appFor(db);
     const { cookie } = await login(app, fixture);
@@ -2052,6 +2052,75 @@ describe("menu, floor and orders", () => {
 
     const waiterLogin = await login(app, { ...fixture, userId: waiter.id }, "3333");
     expect(waiterLogin.response.status).toBe(401);
+  });
+
+  it("restricts housekeeping and kitchen routes and owner clock actions", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const app = appFor(db);
+    const { cookie } = await login(app, fixture);
+
+    const ownerClock = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ venue_id: fixture.venueId }),
+    });
+    expect(ownerClock.status).toBe(403);
+
+    async function addRole(role: "kitchen" | "housekeeping", pin: string) {
+      const response = await app.request("/api/staff", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: `Test ${role}`, pin, role }),
+      });
+      expect(response.status).toBe(201);
+      return (await response.json()) as { id: string };
+    }
+
+    const housekeeping = await addRole("housekeeping", "4444");
+    const kitchen = await addRole("kitchen", "5555");
+    const housekeepingLogin = await login(
+      app,
+      { ...fixture, userId: housekeeping.id },
+      "4444",
+    );
+    const kitchenLogin = await login(
+      app,
+      { ...fixture, userId: kitchen.id },
+      "5555",
+    );
+
+    const housekeepingShifts = await app.request(
+      `/api/shifts?venue_id=${fixture.venueId}`,
+      { headers: { cookie: housekeepingLogin.cookie } },
+    );
+    expect(housekeepingShifts.status).toBe(200);
+    const housekeepingOrders = await app.request(
+      `/api/orders?venue_id=${fixture.venueId}`,
+      { headers: { cookie: housekeepingLogin.cookie } },
+    );
+    expect(housekeepingOrders.status).toBe(403);
+    const housekeepingSettings = await app.request(
+      `/api/settings?venue_id=${fixture.venueId}`,
+      { headers: { cookie: housekeepingLogin.cookie } },
+    );
+    expect(housekeepingSettings.status).toBe(403);
+
+    const kitchenShifts = await app.request(
+      `/api/shifts?venue_id=${fixture.venueId}`,
+      { headers: { cookie: kitchenLogin.cookie } },
+    );
+    expect(kitchenShifts.status).toBe(200);
+    const kitchenTickets = await app.request(
+      `/api/kds/tickets?venue_id=${fixture.venueId}`,
+      { headers: { cookie: kitchenLogin.cookie } },
+    );
+    expect(kitchenTickets.status).toBe(200);
+    const kitchenOrders = await app.request(
+      `/api/orders?venue_id=${fixture.venueId}`,
+      { headers: { cookie: kitchenLogin.cookie } },
+    );
+    expect(kitchenOrders.status).toBe(403);
   });
 
   it("tracks housekeeping time without cash fields", async () => {

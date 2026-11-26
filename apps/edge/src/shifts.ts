@@ -45,6 +45,9 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const auth = context.get("auth");
+    if (auth.role === "owner") {
+      return context.json({ error: "owners_do_not_clock_in" }, 403);
+    }
     const venue = await resolveVenue(db, auth.tenantId, parsed.data.venue_id);
     if (!venue) return context.json({ error: "venue_not_found" }, 404);
 
@@ -131,6 +134,9 @@ export function registerShiftRoutes(app: Hono<AppEnv>, db: Db) {
     }
 
     const auth = context.get("auth");
+    if (auth.role === "owner") {
+      return context.json({ error: "owners_do_not_clock_out" }, 403);
+    }
     const shift = await db
       .selectFrom("shifts")
       .selectAll()

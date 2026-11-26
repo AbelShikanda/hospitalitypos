@@ -49,6 +49,38 @@ export function clearSessionCookie(context: Context): void {
   deleteCookie(context, SESSION_COOKIE, { path: "/" });
 }
 
+function pathAllowedForRole(
+  role: Role,
+  method: string,
+  path: string,
+): boolean {
+  if (role === "housekeeping") {
+    return (
+      path.startsWith("/api/auth") ||
+      path.startsWith("/api/shifts") ||
+      path === "/api/version" ||
+      path === "/api/health"
+    );
+  }
+  if (role === "kitchen") {
+    if (
+      path.startsWith("/api/auth") ||
+      path.startsWith("/api/shifts") ||
+      path.startsWith("/api/kds") ||
+      path === "/api/stations" ||
+      path === "/api/version" ||
+      path === "/api/health"
+    ) {
+      return true;
+    }
+    if (method === "POST" && /^\/api\/orders\/[^/]+\/status$/.test(path)) {
+      return true;
+    }
+    return method === "POST" && path === "/api/print/kitchen";
+  }
+  return true;
+}
+
 export function requireAuth(db: Db) {
   return createMiddleware<AppEnv>(async (context, next) => {
     const token = getSessionToken(context);
@@ -83,6 +115,10 @@ export function requireAuth(db: Db) {
 
     const role = membership ? normalizeRole(membership.role) : null;
     if (!role) return context.json({ error: "forbidden" }, 403);
+
+    if (!pathAllowedForRole(role, context.req.method, context.req.path)) {
+      return context.json({ error: "forbidden" }, 403);
+    }
 
     context.set("auth", {
       tenantId: user.tenant_id,
