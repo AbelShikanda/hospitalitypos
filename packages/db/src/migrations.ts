@@ -1041,6 +1041,32 @@ const housekeepingAndTips: Migration = {
   },
 };
 
+const systemEvents: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("system_events")
+      .ifNotExists()
+      .addColumn("id", "char(26)", (column) => column.primaryKey().notNull())
+      .addColumn("tenant_id", "char(26)", (column) => column.notNull())
+      .addColumn("user_id", "char(26)", (column) => column.notNull())
+      .addColumn("action", "varchar(40)", (column) => column.notNull())
+      .addColumn("details", "text")
+      .addColumn("created_at", "timestamp", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createIndex("system_events_tenant_created_idx")
+      .ifNotExists()
+      .on("system_events")
+      .columns(["tenant_id", "created_at"])
+      .execute();
+  },
+
+  async down(db: Kysely<any>) {
+    await db.schema.dropTable("system_events").ifExists().execute();
+  },
+};
+
 const migrations: Record<string, Migration> = {
   "001_initial": initial,
   "002_sessions": sessions,
@@ -1058,6 +1084,7 @@ const migrations: Record<string, Migration> = {
   "014_cloud_sync": cloudSync,
   "015_venue_settings_feedback": venueSettingsAndFeedback,
   "016_housekeeping_and_tips": housekeepingAndTips,
+  "017_system_events": systemEvents,
 };
 
 export const migrationProvider: MigrationProvider = {

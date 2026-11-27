@@ -53,8 +53,8 @@ start; Settings → Danger Zone can restart/shut down the edge.
 - [ ] Router basename once a router lands; service-worker registration and scope
       derive from the configured Vite base.
 - [x] Mode detection (`VITE_APP_MODE` + `/api/health` probe) and feature flags;
-      KDS navigation is hidden in hosted mode; lifecycle/printer controls will
-      use the same flags when added.
+      KDS navigation is hidden in hosted mode; lifecycle controls use the same
+      flags and stay hidden in hosted mode.
 - [ ] Data-layer repository interface with IndexedDB adapter (hosted) and edge
       API adapter (edge).
 - [x] Inject `__APP_VERSION__` (semver + git SHA + build time); serve
@@ -70,11 +70,13 @@ start; Settings → Danger Zone can restart/shut down the edge.
 - [x] SW update banner shows versioned release notes from `changelog.json`.
 - [ ] Edge updater: check signed image tags, notify admins, configurable update
       window, rollback on failed health check.
-- [ ] Settings → Danger Zone: Restart / Shut down server with role + PIN
+- [x] Settings → Danger Zone: Restart / Shut down server with role + PIN
       re-auth + typed confirmation + open-bill/shift guard + audit.
-- [ ] `POST /api/system/restart` and `/shutdown`: graceful drain, flush outbox,
-      close printers, checkpoint SQLite, exit; Docker restart policy `no`.
-- [ ] "Server stopped" screen + restart instructions; hide lifecycle in hosted.
+- [x] `POST /api/system/restart` and `/shutdown`: flush outbox sync, close
+      listener, close SQLite; restart reopens the listener; shutdown exits.
+      Printers open per job, so there are no persistent printer sockets to close.
+- [ ] Docker restart policy `no` in the edge image/release docs.
+- [x] "Server stopped" screen + restart instructions; hide lifecycle in hosted.
 - [ ] CI: publish hosted build to Pages; build edge image; create GitHub Release
       with hosted zip, edge bundle, checksums, changelog.
 - [x] CI runs the Playwright role/settings/shift smoke suite.

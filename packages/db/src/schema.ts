@@ -420,6 +420,15 @@ export interface PrintJobsTable {
   updated_at: Timestamp;
 }
 
+export interface SystemEventsTable {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  action: string;
+  details: string | null;
+  created_at: Timestamp;
+}
+
 export interface Database {
   tenants: TenantsTable;
   stations: StationsTable;
@@ -458,4 +467,5 @@ export interface Database {
   api_tokens: ApiTokensTable;
   subscriptions: SubscriptionsTable;
   cloud_backups: CloudBackupsTable;
+  system_events: SystemEventsTable;
 }

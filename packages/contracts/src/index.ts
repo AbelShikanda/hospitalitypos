@@ -258,6 +258,11 @@ export const createSupplierSchema = z.object({
   email: z.string().email().optional(),
 });
 
+export const lifecycleSchema = z.object({
+  pin: z.string().regex(/^\d{4,8}$/),
+  confirmation: z.string().min(1).max(40),
+});
+
 export const clockInSchema = z.object({
   venue_id: ulid,
   starting_cash_minor: z.number().int().nonnegative().default(0),

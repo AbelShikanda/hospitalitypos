@@ -2,7 +2,7 @@ import { hashPin } from "@hpos/auth";
 import { createDb, migrate, type Db } from "@hpos/db";
 import { newId } from "@hpos/domain";
 import { describe, expect, it } from "vitest";
-import { createEdgeApp } from "./app.js";
+import { createEdgeApp, type EdgeAppOptions } from "./app.js";
 
 async function makeDb(): Promise<Db> {
   const db = createDb({ dialect: "sqlite", url: ":memory:" });
@@ -214,8 +214,8 @@ async function addMenu(db: Db, fixture: Fixture): Promise<MenuFixture> {
   };
 }
 
-function appFor(db: Db) {
-  return createEdgeApp({ db, version: "test", webDist: null });
+function appFor(db: Db, options: Partial<EdgeAppOptions> = {}) {
+  return createEdgeApp({ db, version: "test", webDist: null, ...options });
 }
 
 async function login(
@@ -2121,6 +2121,118 @@ describe("menu, floor and orders", () => {
       { headers: { cookie: kitchenLogin.cookie } },
     );
     expect(kitchenOrders.status).toBe(403);
+  });
+
+  it("guards owner system lifecycle actions", async () => {
+    const db = await makeDb();
+    const fixture = await addTenant(db, "Alpha");
+    const calls: string[] = [];
+    const app = appFor(db, {
+      lifecycle: {
+        restart: () => {
+          calls.push("restart");
+        },
+        shutdown: () => {
+          calls.push("shutdown");
+        },
+      },
+    });
+    const { cookie } = await login(app, fixture);
+
+    const wrongPin = await app.request("/api/system/restart", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ pin: "9999", confirmation: "RESTART" }),
+    });
+    expect(wrongPin.status).toBe(401);
+
+    const wrongConfirmation = await app.request("/api/system/shutdown", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ pin: "1234", confirmation: "restart" }),
+    });
+    expect(wrongConfirmation.status).toBe(400);
+
+    const cashierResponse = await app.request("/api/staff", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Cash", pin: "3333", role: "cashier" }),
+    });
+    expect(cashierResponse.status).toBe(201);
+    const cashier = (await cashierResponse.json()) as { id: string };
+    const cashierLogin = await login(
+      app,
+      { ...fixture, userId: cashier.id },
+      "3333",
+    );
+    const clockIn = await app.request("/api/shifts/clock-in", {
+      method: "POST",
+      headers: {
+        cookie: cashierLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        venue_id: fixture.venueId,
+        starting_cash_minor: 10000,
+      }),
+    });
+    expect(clockIn.status).toBe(201);
+    const shift = (await clockIn.json()) as { id: string };
+
+    const busy = await app.request("/api/system/restart", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ pin: "1234", confirmation: "RESTART" }),
+    });
+    expect(busy.status).toBe(409);
+    await expect(busy.json()).resolves.toMatchObject({
+      error: "system_busy",
+      open_shifts: 1,
+    });
+
+    const clockOut = await app.request(`/api/shifts/${shift.id}/clock-out`, {
+      method: "POST",
+      headers: {
+        cookie: cashierLogin.cookie,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ counted_cash_minor: 10000 }),
+    });
+    expect(clockOut.status).toBe(200);
+
+    const restart = await app.request("/api/system/restart", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ pin: "1234", confirmation: "restart" }),
+    });
+    expect(restart.status).toBe(202);
+    await expect(restart.json()).resolves.toEqual({ status: "restarting" });
+
+    const shutdown = await app.request("/api/system/shutdown", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ pin: "1234", confirmation: "SHUT DOWN" }),
+    });
+    expect(shutdown.status).toBe(202);
+    await expect(shutdown.json()).resolves.toEqual({ status: "stopping" });
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(calls).toEqual(["restart", "shutdown"]);
+
+    const events = await db
+      .selectFrom("system_events")
+      .select(["action", "user_id"])
+      .where("tenant_id", "=", fixture.tenantId)
+      .orderBy("created_at")
+      .execute();
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.action)).toEqual([
+      "restart",
+      "shutdown",
+    ]);
+    expect(events.every((event) => event.user_id === fixture.userId)).toBe(
+      true,
+    );
   });
 
   it("tracks housekeeping time without cash fields", async () => {

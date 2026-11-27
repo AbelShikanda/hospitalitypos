@@ -16,7 +16,27 @@ const db = createDb({
 await migrate(db);
 await seed(db);
 
-const app = createEdgeApp({ db, version });
+let server: ReturnType<typeof serve> | null = null;
+let restarting = false;
+
+const app = createEdgeApp({
+  db,
+  version,
+  lifecycle: {
+    restart: async () => {
+      if (restarting) return;
+      restarting = true;
+      await drain();
+      server = startServer();
+      restarting = false;
+    },
+    shutdown: async () => {
+      await drain();
+      await db.destroy();
+      process.exit(0);
+    },
+  },
+});
 
 const syncUrl = process.env.CLOUD_SYNC_URL;
 const syncToken = process.env.CLOUD_TOKEN;
@@ -41,9 +61,37 @@ const venue = tenant
       .executeTakeFirst()
   : null;
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`[edge] listening on http://localhost:${info.port}`);
-});
+function startServer() {
+  return serve({ fetch: app.fetch, port }, (info) => {
+    console.log(`[edge] listening on http://localhost:${info.port}`);
+  });
+}
+
+async function closeServer() {
+  const current = server;
+  if (!current) return;
+  await new Promise<void>((resolve) => {
+    current.close(() => resolve());
+    (current as { closeAllConnections?: () => void }).closeAllConnections?.();
+  });
+  server = null;
+}
+
+async function drain() {
+  if (syncUrl && syncToken && tenant && venue) {
+    await runEdgeSync(db, {
+      url: syncUrl,
+      token: syncToken,
+      tenantId: tenant.id,
+      venueId: venue.id,
+      version,
+      schemaVersion: 17,
+    }).catch(() => undefined);
+  }
+  await closeServer();
+}
+
+server = startServer();
 
 if (syncUrl && syncToken && tenant && venue) {
   setInterval(() => {
@@ -53,7 +101,7 @@ if (syncUrl && syncToken && tenant && venue) {
       tenantId: tenant.id,
       venueId: venue.id,
       version,
-      schemaVersion: 16,
+      schemaVersion: 17,
     }).catch(() => undefined);
   }, 30000).unref();
 }

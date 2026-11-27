@@ -346,6 +346,7 @@ type Feedback = {
 };
 
 type Phase = "loading" | "login" | "ready" | "offline";
+type SystemState = "running" | "restarting" | "stopped";
 
 const NAV_ITEMS = [
   "Tables",
@@ -4378,11 +4379,13 @@ function SettingsView({
   role,
   onStockChange,
   staffOnly = false,
+  onLifecycle,
 }: {
   venueId: string;
   role: Role;
   onStockChange: (enabled: boolean) => void;
   staffOnly?: boolean;
+  onLifecycle?: (action: "restart" | "shutdown") => void;
 }) {
   const [floor, setFloor] = useState<Floor | null>(null);
   const [settings, setSettings] = useState<VenueSettings | null>(null);
@@ -4408,6 +4411,12 @@ function SettingsView({
   const [version, setVersion] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [lifecyclePin, setLifecyclePin] = useState("");
+  const [lifecycleConfirm, setLifecycleConfirm] = useState("");
+  const [lifecycleBusy, setLifecycleBusy] = useState<
+    "restart" | "shutdown" | null
+  >(null);
+  const [lifecycleError, setLifecycleError] = useState("");
   const isOwner = role === "owner";
   async function checkUpdates() {
     const result = await checkForUpdates();
@@ -4421,6 +4430,53 @@ function SettingsView({
     }
     setError("");
     setNotice("Checked for updates.");
+  }
+  async function runLifecycle(action: "restart" | "shutdown") {
+    setLifecycleBusy(action);
+    setLifecycleError("");
+    try {
+      const response = await fetch(`/api/system/${action}`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pin: lifecyclePin,
+          confirmation: lifecycleConfirm,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        open_orders?: number;
+        open_shifts?: number;
+      };
+      if (!response.ok) {
+        if (result.error === "invalid_pin") {
+          setLifecycleError("Owner PIN is incorrect.");
+        } else if (result.error === "confirmation_mismatch") {
+          setLifecycleError(
+            `Type ${action === "restart" ? "RESTART" : "SHUT DOWN"} to confirm.`,
+          );
+        } else if (result.error === "system_busy") {
+          setLifecycleError(
+            `Close ${result.open_orders ?? 0} open bill(s) and ${result.open_shifts ?? 0} open shift(s) first.`,
+          );
+        } else if (result.error === "invalid_input") {
+          setLifecycleError("Enter a 4-8 digit owner PIN and confirmation.");
+        } else if (result.error === "too_many_attempts") {
+          setLifecycleError("Too many attempts. Wait a minute and try again.");
+        } else {
+          setLifecycleError("The server rejected the request.");
+        }
+        return;
+      }
+      setLifecyclePin("");
+      setLifecycleConfirm("");
+      onLifecycle?.(action);
+    } catch {
+      setLifecycleError("Could not reach the server.");
+    } finally {
+      setLifecycleBusy(null);
+    }
   }
   const assignableRoles: Role[] = isOwner
     ? ["owner", "manager", "cashier", "waiter", "kitchen", "housekeeping"]
@@ -5090,6 +5146,72 @@ function SettingsView({
           </section>
         </>
       ) : null}
+
+      {isOwner && !staffOnly && onLifecycle ? (
+        <section className="card bill-card danger-zone">
+          <header className="area-head">
+            <h2>Danger zone</h2>
+            <span>owner only</span>
+          </header>
+          <p className="muted">
+            Restart after updates or stop the server before moving the data
+            folder. Both actions are blocked while bills or shifts are open and
+            are written to the audit trail.
+          </p>
+          <div className="bill-controls">
+            <label>
+              <span>Owner PIN</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                value={lifecyclePin}
+                onChange={(event) => setLifecyclePin(event.target.value)}
+                placeholder="4-8 digits"
+              />
+            </label>
+            <label>
+              <span>Type RESTART or SHUT DOWN</span>
+              <input
+                value={lifecycleConfirm}
+                onChange={(event) => setLifecycleConfirm(event.target.value)}
+                placeholder="Confirmation"
+              />
+            </label>
+          </div>
+          <div className="builder-actions">
+            <button
+              className="btn-primary"
+              type="button"
+              disabled={
+                lifecycleBusy !== null ||
+                !/^\d{4,8}$/.test(lifecyclePin) ||
+                lifecycleConfirm.trim().toUpperCase() !== "RESTART"
+              }
+              onClick={() => void runLifecycle("restart")}
+            >
+              {lifecycleBusy === "restart" ? "Restarting..." : "Restart server"}
+            </button>
+            <button
+              className="theme-button"
+              type="button"
+              disabled={
+                lifecycleBusy !== null ||
+                !/^\d{4,8}$/.test(lifecyclePin) ||
+                lifecycleConfirm.trim().toUpperCase() !== "SHUT DOWN"
+              }
+              onClick={() => void runLifecycle("shutdown")}
+            >
+              {lifecycleBusy === "shutdown" ? "Stopping..." : "Shut down server"}
+            </button>
+          </div>
+          {lifecycleError ? (
+            <p className="danger-error" role="alert">
+              {lifecycleError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -5130,6 +5252,8 @@ function App() {
   const [syncFailure, setSyncFailure] = useState<OutboxFailure | null>(null);
   const [updateState, setUpdateState] =
     useState<UpdateState>(getUpdateState);
+  const [systemState, setSystemState] = useState<SystemState>("running");
+  const [systemError, setSystemError] = useState("");
 
   useEffect(() => subscribeOutboxFailures(setSyncFailure), []);
 
@@ -5141,6 +5265,43 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (systemState !== "restarting") return;
+    let cancelled = false;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        attempts += 1;
+        try {
+          const response = await fetch("/api/health", {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+          if (response.ok) {
+            if (!cancelled) {
+              window.clearInterval(timer);
+              location.reload();
+            }
+            return;
+          }
+        } catch {
+          // Server is still restarting.
+        }
+        if (!cancelled && attempts >= 30) {
+          window.clearInterval(timer);
+          setSystemState("stopped");
+          setSystemError(
+            "The server did not come back. Start it again from the launcher.",
+          );
+        }
+      })();
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [systemState]);
 
   useEffect(() => {
     const saved = localStorage.getItem("hpos-theme");
@@ -5285,6 +5446,42 @@ function App() {
     );
   }
 
+  if (systemState !== "running") {
+    return (
+      <div className="center-state">
+        <section className="card system-state-card">
+          <span className="eyebrow">
+            {systemState === "restarting" ? "Restarting" : "Stopped"}
+          </span>
+          <h1>
+            {systemState === "restarting"
+              ? "Restarting the server…"
+              : "Server stopped"}
+          </h1>
+          <p className="muted">
+            {systemState === "restarting"
+              ? "Waiting for the POS to come back. This page will reload automatically."
+              : "The POS is safely stopped. Start it again from the launcher, then reload this page."}
+          </p>
+          {systemError ? (
+            <p className="danger-error" role="alert">
+              {systemError}
+            </p>
+          ) : null}
+          {systemState === "stopped" ? (
+            <button
+              className="btn-primary"
+              type="button"
+              onClick={() => location.reload()}
+            >
+              Check again
+            </button>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
+
   if (phase === "login" && bootstrap) {
     return (
       <Login
@@ -5420,6 +5617,16 @@ function App() {
             venueId={venueId}
             role={role}
             onStockChange={setStockEnabled}
+            onLifecycle={
+              appMode === "edge"
+                ? (action) => {
+                    setSystemError("");
+                    setSystemState(
+                      action === "restart" ? "restarting" : "stopped",
+                    );
+                  }
+                : undefined
+            }
           />
         ) : view === "Bill" ? (
           <BillView

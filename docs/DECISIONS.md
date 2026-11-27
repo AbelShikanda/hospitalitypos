@@ -379,17 +379,19 @@ relocation, power-down) without exposing a dangerous control in normal UI.
 - Located in **Settings → Danger Zone** (deliberately out of the way), hidden in
   hosted mode: **Restart service** and **Shut down server**.
 - Backed by `POST /api/system/restart` and `POST /api/system/shutdown`, which
-  require an elevated role (Owner/Manager), **PIN re-authentication**, and a
-  typed confirmation phrase.
-- Blocked (or explicitly forced with an audit entry) when there are open bills or
-  an active shift.
-- Shutdown is **graceful**: stop accepting work, flush the sync outbox, close
-  printer connections, checkpoint SQLite, then exit.
+  require **Owner** (the role with Settings access), **PIN re-authentication**,
+  and a typed confirmation phrase (`RESTART` / `SHUT DOWN`).
+- Blocked when there are open bills or an active shift; there is no force path.
+- Shutdown is **graceful**: flush the sync outbox, close the listener, close
+  SQLite, then exit. Printers open per job, so there are no persistent printer
+  sockets to close.
 - Docker restart policy is `no` for the app service so shutdown stays down;
   restarting requires a power cycle or `docker compose up -d`. The UI shows a
   **"Server stopped"** screen with restart instructions afterwards.
-- Every lifecycle action is written to the audit log.
-- Endpoint is LAN/loopback-only and rate-limited.
+- Every lifecycle action is written to the append-only `system_events` audit
+  table (schema 17).
+- Endpoints are owner-only, rate-limited (5 attempts/minute/owner), and remain on
+  the edge/LAN surface only. Hosted mode hides the Danger Zone.
 
 **Consequences:** The PWA loses its backend after shutdown (expected). Remote
 restart needs out-of-band access; cloud "wake" is not guaranteed. A maintenance

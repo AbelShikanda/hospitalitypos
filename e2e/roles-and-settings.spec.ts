@@ -43,6 +43,9 @@ test('owner can add, edit and remove staff from the Staff page', async ({
   await expect(
     page.getByRole('heading', { name: 'Staff', level: 1 }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Danger zone' }),
+  ).toHaveCount(0);
 
   await page.getByLabel('Name', { exact: true }).fill('E2E Kitchen');
   await page.getByLabel('PIN', { exact: true }).fill('6789');
@@ -106,7 +109,13 @@ test('owner settings load areas and accept tables', async ({ page }) => {
     .getByRole('navigation', { name: 'Main' })
     .getByRole('button', { name: 'Settings' })
     .click();
-  await expect(page.getByText(/schema 16/)).toBeVisible();
+  await expect(page.getByText(/schema 17/)).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Danger zone' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Restart server' }),
+  ).toBeDisabled();
 
   await page.getByLabel('Area name', { exact: true }).fill('E2E Terrace');
   await page.getByRole('button', { name: 'Add area' }).click();

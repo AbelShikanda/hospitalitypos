@@ -30,7 +30,7 @@ function versionFile(): Plugin {
         type: "asset",
         fileName: "version.json",
         source: JSON.stringify(
-          { app: appVersion, edge: null, schema: 16, build: buildTime },
+          { app: appVersion, edge: null, schema: 17, build: buildTime },
           null,
           2,
         ),

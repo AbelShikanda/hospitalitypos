@@ -35,11 +35,16 @@ import { registerStaffRoutes } from "./staff.js";
 import { registerShiftRoutes } from "./shifts.js";
 import { registerStockRoutes } from "./stock.js";
 import { registerEdgeSyncRoutes } from "./sync.js";
+import {
+  registerSystemRoutes,
+  type LifecycleHooks,
+} from "./system.js";
 
 export interface EdgeAppOptions {
   db: Db;
   version?: string;
   webDist?: string | null;
+  lifecycle?: LifecycleHooks;
 }
 
 const LOGIN_WINDOW_MS = 60_000;
@@ -89,6 +94,10 @@ export function createEdgeApp({
   db,
   version = "0.0.0-dev",
   webDist,
+  lifecycle = {
+    restart: () => undefined,
+    shutdown: () => undefined,
+  },
 }: EdgeAppOptions) {
   const app = new Hono<AppEnv>();
   const build = new Date().toISOString();
@@ -100,7 +109,7 @@ export function createEdgeApp({
   );
 
   app.get("/api/version", (context) =>
-    context.json({ app: version, edge: version, schema: 16, build }),
+    context.json({ app: version, edge: version, schema: 17, build }),
   );
 
   app.get("/api/bootstrap", async (context) => {
@@ -288,6 +297,7 @@ export function createEdgeApp({
   registerStockRoutes(app, db);
   registerReportRoutes(app, db);
   registerEdgeSyncRoutes(app, db);
+  registerSystemRoutes(app, db, lifecycle);
 
   if (webDist !== null) {
     const dist =
