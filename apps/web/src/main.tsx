@@ -5353,11 +5353,23 @@ function App() {
       ) : null}
       {updateState.needRefresh ? (
         <div className="sync-error update-banner" role="status">
-          <span>
+          <div>
             {updateState.billOpen
               ? "A new version is ready. Finish the open bill, then reload."
               : "A new version is ready."}
-          </span>
+            {updateState.releaseNotes ? (
+              <details className="update-notes">
+                <summary>
+                  What&apos;s new in {updateState.releaseNotes.version}
+                </summary>
+                <ul>
+                  {updateState.releaseNotes.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
           <button
             className="theme-button"
             type="button"

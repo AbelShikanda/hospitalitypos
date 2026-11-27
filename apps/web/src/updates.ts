@@ -1,5 +1,9 @@
 import { registerSW } from 'virtual:pwa-register';
-import { canApplyUpdate } from './updates-core.js';
+import {
+  canApplyUpdate,
+  parseReleaseNotes,
+  type ReleaseNotes,
+} from './updates-core.js';
 
 export type UpdateState = {
   needRefresh: boolean;
@@ -7,6 +11,7 @@ export type UpdateState = {
   checking: boolean;
   billOpen: boolean;
   error: string;
+  releaseNotes: ReleaseNotes | null;
 };
 
 const listeners = new Set<(state: UpdateState) => void>();
@@ -16,6 +21,7 @@ let state: UpdateState = {
   checking: false,
   billOpen: false,
   error: '',
+  releaseNotes: null,
 };
 let updateServiceWorker: ((reload?: boolean) => Promise<void>) | null = null;
 let started = false;
@@ -24,6 +30,19 @@ let stopPolling: (() => void) | null = null;
 function publish(patch: Partial<UpdateState>) {
   state = { ...state, ...patch };
   for (const listener of listeners) listener(state);
+}
+
+async function loadReleaseNotes() {
+  try {
+    const response = await fetch(`changelog.json?ts=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) return;
+    const notes = parseReleaseNotes(await response.json());
+    if (notes) publish({ releaseNotes: notes });
+  } catch {
+    return;
+  }
 }
 
 export function getUpdateState(): UpdateState {
@@ -47,6 +66,7 @@ export function startUpdateRegistration(): () => void {
     immediate: true,
     onNeedRefresh() {
       publish({ needRefresh: true, checking: false, error: '' });
+      void loadReleaseNotes();
     },
     onOfflineReady() {
       publish({ offlineReady: true, checking: false });

@@ -1534,6 +1534,20 @@
   border-color: var(--brand-bright);
   background: var(--brand-tint);
 }
+.update-notes {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.update-notes summary {
+  cursor: pointer;
+}
+
+.update-notes ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
 
 .staff-section-label {
   margin-top: 18px;

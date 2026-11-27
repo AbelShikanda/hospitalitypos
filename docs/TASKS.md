@@ -67,7 +67,7 @@ start; Settings → Danger Zone can restart/shut down the edge.
 - [x] SW update flow (`registerType: 'prompt'`): poll on interval + focus,
       non-blocking "Update available" banner, defer reload while a bill is open,
       "Check for updates" in Settings.
-- [ ] SW update banner includes release changelog details.
+- [x] SW update banner shows versioned release notes from `changelog.json`.
 - [ ] Edge updater: check signed image tags, notify admins, configurable update
       window, rollback on failed health check.
 - [ ] Settings → Danger Zone: Restart / Shut down server with role + PIN
